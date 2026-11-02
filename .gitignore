@@ -5,6 +5,6 @@ windivert/*.dll
 windivert/*.sys
 data/
 *.exe~
-dist/
+/dist/
 cmd/installer/payload/
 assets/_build.rc
