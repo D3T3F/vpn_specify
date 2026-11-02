@@ -1,0 +1,10 @@
+*.exe
+*.ovpn
+*.conf
+windivert/*.dll
+windivert/*.sys
+data/
+*.exe~
+dist/
+cmd/installer/payload/
+assets/_build.rc

@@ -1,0 +1,29 @@
+// Modelo dos recursos do Windows (ícone e informações de versão) dos
+// executáveis. O scripts\build.ps1 -Icon preenche os {{CAMPOS}} e gera os
+// arquivos rsrc_windows_amd64.syso de cmd\vpn_specify e cmd\installer.
+#pragma code_page(65001)
+1 ICON "vpn_specify.ico"
+
+1 VERSIONINFO
+FILEVERSION {{VERSION_COMMA}}
+PRODUCTVERSION {{VERSION_COMMA}}
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041604B0"
+    BEGIN
+      VALUE "FileDescription", "{{DESCRIPTION}}"
+      VALUE "ProductName", "vpn_specify"
+      VALUE "FileVersion", "{{VERSION}}"
+      VALUE "ProductVersion", "{{VERSION}}"
+      VALUE "OriginalFilename", "{{FILENAME}}"
+      VALUE "LegalCopyright", "Copyright (c) 2026 D3T3F. Licença MIT."
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0416, 0x04B0
+  END
+END

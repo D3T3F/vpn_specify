@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>vpn_specify</title>
+<link rel="icon" href="{{LOGO}}">
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --text: #1d2129; --muted: #677085; --line: #e2e5eb;
+  --accent: #2f6fed; --accent-text: #fff; --ok: #1f9d55; --warn: #c27c0e; --err: #d03b3b;
+  --chip: #eef1f6; --input: #fff; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171c; --card: #1e2128; --text: #e7e9ee; --muted: #9aa2b4; --line: #2d313b;
+    --accent: #5b8cff; --accent-text: #0d1220; --ok: #3ccf7a; --warn: #f0b03c; --err: #ff6b6b;
+    --chip: #292d36; --input: #171a20; --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 5; }
+header .logo { width: 28px; height: 28px; margin-right: -4px; }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+.pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 99px; background: var(--chip); font-size: 13px; font-weight: 550; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.conectado .dot { background: var(--ok); } .pill.conectando .dot { background: var(--warn); animation: pulse 1s infinite; } .pill.erro .dot { background: var(--err); }
+@keyframes pulse { 50% { opacity: .3; } }
+.spacer { flex: 1; }
+main { max-width: 1040px; margin: 0 auto; padding: 18px 20px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
+.card.wide { grid-column: 1 / -1; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.card h2 .spacer { flex: 1; }
+button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; padding: 6px 12px; cursor: pointer; font-weight: 550; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.danger { color: var(--err); }
+button.small { padding: 3px 9px; font-size: 13px; }
+button:disabled { opacity: .5; cursor: default; }
+select, input[type=text], input[type=password] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; width: 100%; }
+label.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+label.check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.row { display: flex; gap: 10px; align-items: center; }
+.list { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.item { background: var(--card); padding: 10px 12px; display: flex; gap: 12px; align-items: center; }
+.item .grow { flex: 1; min-width: 0; }
+.item .title { font-weight: 600; }
+.item .sub { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.avatar { width: 34px; height: 34px; border-radius: 8px; background: var(--chip); display: grid; place-items: center; font-weight: 700; color: var(--accent); flex: none; }
+.badge { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 99px; background: var(--chip); color: var(--muted); margin-left: 6px; font-weight: 600; vertical-align: 1px; }
+.badge.warn { color: var(--warn); }
+.empty { color: var(--muted); padding: 14px 4px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; margin-top: 12px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.err { color: var(--err); }
+pre#log { margin: 0; max-height: 260px; overflow: auto; font: 12px/1.5 "Cascadia Mono", Consolas, monospace; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+details summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); padding: 0; width: min(560px, 92vw); box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+dialog.wide { width: min(820px, 94vw); }
+textarea { font: 12.5px/1.5 "Cascadia Mono", Consolas, monospace; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; width: 100%; height: min(52vh, 460px); resize: vertical; tab-size: 4; }
+.about { border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: 13px; }
+pre.license { margin: 0; max-height: 55vh; overflow: auto; font: 12px/1.5 "Cascadia Mono", Consolas, monospace; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 12px; white-space: pre-wrap; }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog form { padding: 18px 20px; display: grid; gap: 12px; }
+dialog h3 { margin: 0 0 4px; font-size: 16px; }
+dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.seg { display: grid; gap: 6px; }
+.seg label { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.seg label:has(input:checked) { border-color: var(--accent); }
+.seg small { display: block; color: var(--muted); }
+#toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; }
+.toast { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; max-width: 420px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.toast.error { border-left-color: var(--err); } .toast.ok { border-left-color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <img class="logo" src="{{LOGO}}" alt="">
+  <h1>vpn_specify</h1>
+  <span id="pill" class="pill"><span class="dot"></span><span id="pillText">Desconectado</span></span>
+  <span class="spacer"></span>
+  <button onclick="vsOpenDataDir()">Pasta de dados</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Conexão</h2>
+    <div class="row">
+      <select id="connSelect"></select>
+      <button id="connBtn" class="primary" onclick="toggleConn()">Conectar</button>
+    </div>
+    <dl class="kv" id="connInfo"></dl>
+    <p class="hint">Só os apps abertos pelo vpn_specify usam a VPN. O resto do computador continua na rede normal.</p>
+    <div class="row" style="margin-top:10px">
+      <button class="small" id="ipBtn" onclick="checkIP()" disabled>Testar IP</button>
+      <span id="ipOut" class="sub" style="color:var(--muted);font-size:12.5px"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>VPNs <span class="spacer"></span><button class="small primary" onclick="importConfig()">Importar arquivo…</button></h2>
+    <div id="configs" class="list"></div>
+    <p class="hint">Os arquivos (.ovpn / .conf) são copiados para a pasta de dados do vpn_specify. Use “Editar” para renomear ou alterar a configuração.</p>
+  </section>
+
+  <section class="card wide">
+    <h2>Apps na VPN <span class="spacer"></span><button class="small primary" onclick="addApp()">Adicionar app…</button></h2>
+    <div id="apps" class="list"></div>
+    <p class="hint">Use “Criar atalho” para ter, por exemplo, “DiscordVPN” na pesquisa do Windows ao lado do Discord original.</p>
+  </section>
+
+  <section class="card wide">
+    <h2>Preferências</h2>
+    <div style="display:grid;gap:10px">
+      <label class="check"><input type="checkbox" id="autoDisc" onchange="vsSetAutoDisconnect(this.checked)">
+        Desconectar a VPN quando os apps abertos por ela forem fechados (com esta janela fechada)</label>
+      <div class="row"><button class="small" onclick="mainShortcut()">Adicionar “vpn_specify” ao Menu Iniciar</button></div>
+      <div class="row about"><span id="aboutText">vpn_specify</span><span class="spacer"></span>
+        <button class="small" onclick="showLicense()">Ver licença</button></div>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <details id="logBox">
+      <summary>Log</summary>
+      <pre id="log" style="margin-top:10px"></pre>
+    </details>
+  </section>
+</main>
+
+<dialog id="appDlg">
+  <form method="dialog" onsubmit="return false">
+    <h3 id="appDlgTitle">Adicionar app</h3>
+    <label class="field">Nome<input type="text" id="aName"></label>
+    <label class="field">Programa
+      <div class="row"><input type="text" id="aPath" readonly><button type="button" onclick="pickApp()">Escolher…</button></div>
+    </label>
+    <label class="field">Argumentos<input type="text" id="aArgs"></label>
+    <label class="field">VPN<select id="aConfig"></select></label>
+    <div class="seg">
+      <label><input type="radio" name="aMode" value="capture" checked onchange="modeChanged()">
+        <span><b>Captura completa</b> (recomendado)<small>Todo o tráfego do app, incluindo UDP e voz (Discord, jogos). Usa o driver WinDivert.</small></span></label>
+      <label><input type="radio" name="aMode" value="proxy" onchange="modeChanged()">
+        <span><b>Proxy</b><small>Só TCP, para navegadores e apps Chromium/Electron. Não precisa de driver.</small></span></label>
+    </div>
+    <label class="field" id="aCaptureField">Processos capturados (separados por vírgula)<input type="text" id="aCapture" placeholder="discord.exe"></label>
+    <div class="buttons">
+      <button type="button" onclick="appDlg.close()">Cancelar</button>
+      <button type="button" class="primary" onclick="saveApp()">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="scDlg">
+  <form method="dialog" onsubmit="return false">
+    <h3>Criar atalho</h3>
+    <label class="field">Nome do atalho (aparece na pesquisa do Windows)<input type="text" id="scName"></label>
+    <label class="check"><input type="checkbox" id="scDesktop"> Criar também na Área de Trabalho</label>
+    <p class="hint" style="margin:0">Ao abrir o atalho, o vpn_specify conecta a VPN (pedindo permissão de Administrador se ainda não estiver conectado) e abre o app dentro dela.</p>
+    <div class="buttons">
+      <button type="button" onclick="scDlg.close()">Cancelar</button>
+      <button type="button" class="primary" onclick="createShortcut()">Criar atalho</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="credDlg">
+  <form method="dialog" onsubmit="return false">
+    <h3 id="credTitle">Credenciais</h3>
+    <label class="field">Usuário<input type="text" id="cUser" autocomplete="off"></label>
+    <label class="field">Senha<input type="password" id="cPass" autocomplete="off" placeholder="(deixe vazio para manter a atual)"></label>
+    <p class="hint" style="margin:0">A senha é guardada protegida pelo Windows (DPAPI): só a sua conta deste PC consegue ler.</p>
+    <div class="buttons">
+      <button type="button" onclick="credDlg.close()">Cancelar</button>
+      <button type="button" class="primary" onclick="saveCred()">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="cfgDlg" class="wide">
+  <form method="dialog" onsubmit="return false">
+    <h3>Editar VPN</h3>
+    <label class="field">Nome<input type="text" id="eName" autocomplete="off"></label>
+    <label class="field">Configuração <span id="eInfo" style="font-size:12px"></span>
+      <textarea id="eText" spellcheck="false" wrap="off"></textarea></label>
+    <p class="hint" style="margin:0">Renomear atualiza os apps que usam esta VPN. Os atalhos já criados continuam funcionando.</p>
+    <div class="buttons">
+      <button type="button" onclick="cfgDlg.close()">Cancelar</button>
+      <button type="button" class="primary" onclick="saveCfgEdit()">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="licDlg" class="wide">
+  <form method="dialog" onsubmit="return false">
+    <h3>Licença</h3>
+    <pre id="licText" class="license"></pre>
+    <div class="buttons"><button type="button" class="primary" onclick="licDlg.close()">Fechar</button></div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let state = null, lastConfigs = "", lastApps = "", logNext = 0, editing = null, scApp = null, credCfg = null, cfgEditing = null;
+
+function toast(msg, kind) {
+  const t = document.createElement("div");
+  t.className = "toast " + (kind || "");
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), kind === "error" ? 9000 : 4500);
+}
+async function call(p, okMsg) {
+  try { const r = await p; if (okMsg) toast(okMsg, "ok"); refresh(); return r; }
+  catch (e) { toast(String(e), "error"); throw e; }
+}
+
+const stateNames = { desconectado: "Desconectado", conectando: "Conectando…", conectado: "Conectado", erro: "Erro" };
+
+async function refresh() {
+  try { state = await vsState(); } catch (e) { return; }
+  const st = state.status, s = state.settings;
+  s.configs = s.configs || []; s.apps = s.apps || [];
+  if (state.notice) toast(state.notice, "error");
+
+  $("pill").className = "pill " + st.state;
+  $("pillText").textContent = stateNames[st.state] + (st.config && st.state !== "desconectado" ? " · " + st.config : "");
+  const active = st.state === "conectado" || st.state === "conectando";
+  $("connBtn").textContent = active ? "Desconectar" : "Conectar";
+  $("connBtn").className = active ? "" : "primary";
+  $("connBtn").disabled = !active && s.configs.length === 0;
+  $("connSelect").disabled = active;
+  $("ipBtn").disabled = st.state !== "conectado";
+
+  let info = "";
+  if (st.state === "conectado") {
+    info += `<dt>Desde</dt><dd>${new Date(st.since * 1000).toLocaleTimeString()}</dd>`;
+    info += `<dt>Captura</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : "nenhum app capturado"}</dd>`;
+    info += `<dt>Proxy</dt><dd>SOCKS5 ${esc(st.socks)} · HTTP ${esc(st.http)}</dd>`;
+  }
+  if (st.state === "erro") info += `<dt>Erro</dt><dd class="err">${esc(st.error)}</dd>`;
+  $("connInfo").innerHTML = info;
+  $("autoDisc").checked = s.autoDisconnect;
+
+  const cfgKey = JSON.stringify(s.configs);
+  if (cfgKey !== lastConfigs) {
+    lastConfigs = cfgKey;
+    const sel = $("connSelect"), cur = sel.value || (st.config || "");
+    sel.innerHTML = s.configs.map(c => `<option>${esc(c.name)}</option>`).join("") || `<option value="">importe uma VPN</option>`;
+    if (s.configs.some(c => c.name === cur)) sel.value = cur;
+    $("configs").innerHTML = s.configs.length ? s.configs.map(c => `
+      <div class="item">
+        <div class="grow"><div class="title">${esc(c.name)}<span class="badge">${c.kind === "wireguard" ? "WireGuard" : "OpenVPN"}</span>
+          ${c.needAuth ? `<span class="badge ${c.user ? "" : "warn"}">${c.user ? "login: " + esc(c.user) : "precisa de login"}</span>` : ""}</div>
+          <div class="sub">${esc(c.file)}</div></div>
+        <div class="actions">
+          <button class="small" onclick='openCfgEdit(${JSON.stringify(c.name)})'>Editar</button>
+          ${c.kind === "openvpn" ? `<button class="small" onclick='openCred(${JSON.stringify(c.name)})'>Credenciais</button>` : ""}
+          <button class="small danger" onclick='removeConfig(${JSON.stringify(c.name)})'>Remover</button>
+        </div>
+      </div>`).join("") : `<div class="item empty">Nenhuma VPN ainda. Clique em “Importar arquivo…”.</div>`;
+  }
+  if (st.state !== "desconectado" && st.state !== "erro" && st.config) $("connSelect").value = st.config;
+
+  const appKey = JSON.stringify(s.apps);
+  if (appKey !== lastApps) {
+    lastApps = appKey;
+    $("apps").innerHTML = s.apps.length ? s.apps.map(a => `
+      <div class="item">
+        <div class="avatar">${esc((a.name[0] || "?").toUpperCase())}</div>
+        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" ? "captura completa" : "proxy"}</span><span class="badge">${esc(a.config)}</span></div>
+          <div class="sub">${esc(a.path)} ${esc(a.args)}</div>
+          ${a.shortcut ? `<div class="sub">Atalho: ${esc(a.shortcut.split("\\").pop().replace(/\.lnk$/i, ""))}</div>` : ""}</div>
+        <div class="actions">
+          <button class="small primary" onclick='call(vsLaunchApp(${JSON.stringify(a.id)}), "Abrindo ${esc(a.name)} na VPN…")'>Abrir na VPN</button>
+          <button class="small" onclick='openShortcut(${JSON.stringify(a.id)})'>Criar atalho</button>
+          <button class="small" onclick='editApp(${JSON.stringify(a.id)})'>Editar</button>
+          <button class="small danger" onclick='removeApp(${JSON.stringify(a.id)})'>Remover</button>
+        </div>
+      </div>`).join("") : `<div class="item empty">Nenhum app. Clique em “Adicionar app…” e escolha, por exemplo, o atalho do Discord.</div>`;
+  }
+}
+
+async function refreshLog() {
+  try {
+    const r = await vsLog(logNext);
+    logNext = r.next;
+    if (r.lines.length) {
+      const pre = $("log"), atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+      pre.textContent += r.lines.join("\n") + "\n";
+      if (pre.textContent.length > 200000) pre.textContent = pre.textContent.slice(-150000);
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+    }
+  } catch (e) {}
+}
+
+function toggleConn() {
+  const st = state.status;
+  if (st.state === "conectado" || st.state === "conectando") call(vsDisconnect());
+  else if ($("connSelect").value) call(vsConnect($("connSelect").value));
+}
+async function checkIP() {
+  $("ipOut").textContent = "testando…";
+  const r = await vsCheckIP();
+  $("ipOut").textContent = `direto ${r.direct} · VPN (TCP) ${r.vpn} · VPN (UDP) ${r.vpnUdp}`;
+}
+async function importConfig() {
+  const c = await call(vsImportConfig());
+  if (c) {
+    toast(`VPN “${c.name}” importada.`, "ok");
+    if (c.needAuth) openCred(c.name);
+  }
+}
+let about = null;
+(async () => {
+  try {
+    about = await vsAbout();
+    $("aboutText").textContent = `vpn_specify ${about.version} · Software livre sob a licença MIT`;
+  } catch (e) {}
+})();
+function showLicense() {
+  if (!about) return;
+  $("licText").textContent = about.license;
+  licDlg.showModal();
+}
+async function openCfgEdit(name) {
+  let text;
+  try { text = await vsConfigText(name); } catch (e) { toast(String(e), "error"); return; }
+  cfgEditing = name;
+  const c = state.settings.configs.find(c => c.name === name) || {};
+  $("eName").value = name;
+  $("eText").value = text;
+  $("eInfo").textContent = (c.kind === "wireguard" ? "WireGuard" : "OpenVPN") + " · " + (c.file || "");
+  cfgDlg.showModal();
+  $("eName").focus();
+}
+async function saveCfgEdit() {
+  const c = await call(vsUpdateConfig(cfgEditing, $("eName").value.trim(), $("eText").value));
+  if (!c) return;
+  cfgDlg.close();
+  toast(c.name !== cfgEditing ? `VPN renomeada para “${c.name}”.` : "VPN salva.", "ok");
+  if (c.needAuth && !c.user) openCred(c.name);
+}
+function removeConfig(name) { if (confirm(`Remover a VPN “${name}”?`)) call(vsRemoveConfig(name)); }
+function openCred(name) {
+  credCfg = name;
+  const c = state.settings.configs.find(c => c.name === name) || {};
+  $("credTitle").textContent = "Credenciais · " + name;
+  $("cUser").value = c.user || ""; $("cPass").value = "";
+  credDlg.showModal();
+}
+async function saveCred() {
+  const c = state.settings.configs.find(c => c.name === credCfg) || {};
+  if (!$("cPass").value && c.hasPass && $("cUser").value === c.user) { credDlg.close(); return; }
+  await call(vsSetCredentials(credCfg, $("cUser").value.trim(), $("cPass").value), "Credenciais salvas.");
+  credDlg.close();
+}
+
+function fillConfigSelect(sel, value) {
+  sel.innerHTML = state.settings.configs.map(c => `<option>${esc(c.name)}</option>`).join("");
+  if (value) sel.value = value;
+}
+function modeChanged() {
+  $("aCaptureField").style.display = document.querySelector("input[name=aMode]:checked").value === "capture" ? "" : "none";
+}
+function openAppDlg(a) {
+  editing = a;
+  $("appDlgTitle").textContent = a.id ? "Editar app" : "Adicionar app";
+  $("aName").value = a.name || ""; $("aPath").value = a.path || ""; $("aArgs").value = a.args || "";
+  $("aCapture").value = (a.capture || []).join(", ");
+  fillConfigSelect($("aConfig"), a.config || $("connSelect").value);
+  document.querySelector(`input[name=aMode][value=${a.mode === "proxy" ? "proxy" : "capture"}]`).checked = true;
+  modeChanged();
+  appDlg.showModal();
+}
+async function addApp() {
+  if (!state.settings.configs.length) { toast("Importe uma VPN primeiro.", "error"); return; }
+  const p = await call(vsPickApp());
+  if (p) openAppDlg({ ...p, mode: "capture" });
+}
+async function pickApp() {
+  const p = await call(vsPickApp());
+  if (!p) return;
+  Object.assign(editing, { path: p.path, args: p.args, workDir: p.workDir, icon: p.icon });
+  $("aPath").value = p.path; $("aArgs").value = p.args;
+  if (!$("aName").value) $("aName").value = p.name;
+  $("aCapture").value = p.capture.join(", ");
+}
+function editApp(id) { openAppDlg({ ...state.settings.apps.find(a => a.id === id) }); }
+async function saveApp() {
+  const a = { ...editing, name: $("aName").value, path: $("aPath").value, args: $("aArgs").value,
+    config: $("aConfig").value, mode: document.querySelector("input[name=aMode]:checked").value,
+    capture: $("aCapture").value.split(",").map(s => s.trim()).filter(Boolean) };
+  const isNew = !a.id;
+  const saved = await call(vsSaveApp(a), "App salvo.");
+  appDlg.close();
+  if (isNew) openShortcut(saved.id, saved);
+}
+function removeApp(id) {
+  const a = state.settings.apps.find(a => a.id === id);
+  if (confirm(`Remover “${a.name}” (e o atalho dele)?`)) call(vsRemoveApp(id));
+}
+function openShortcut(id, app) {
+  scApp = app || state.settings.apps.find(a => a.id === id);
+  $("scName").value = scApp.name.replace(/\s+/g, "") + "VPN";
+  $("scDesktop").checked = false;
+  scDlg.showModal();
+}
+async function createShortcut() {
+  const lnk = await call(vsCreateShortcut(scApp.id, $("scName").value, $("scDesktop").checked));
+  scDlg.close();
+  toast(`Atalho “${$("scName").value}” criado no Menu Iniciar. Procure por ele na pesquisa do Windows.`, "ok");
+}
+async function mainShortcut() { await call(vsCreateMainShortcut(), "Atalho “vpn_specify” criado no Menu Iniciar."); }
+
+refresh(); refreshLog();
+setInterval(refresh, 1000);
+setInterval(() => { if ($("logBox").open) refreshLog(); }, 1000);
+$("logBox").addEventListener("toggle", () => { if ($("logBox").open) { refreshLog(); } });
+</script>
+</body>
+</html>

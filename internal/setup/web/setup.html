@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Instalar vpn_specify</title>
+<link rel="icon" href="{{LOGO}}">
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --text: #1d2129; --muted: #677085; --line: #e2e5eb;
+  --accent: #2f6fed; --accent-text: #fff; --ok: #1f9d55; --err: #d03b3b; --input: #fff; --chip: #eef1f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171c; --card: #1e2128; --text: #e7e9ee; --muted: #9aa2b4; --line: #2d313b;
+    --accent: #5b8cff; --accent-text: #0d1220; --ok: #3ccf7a; --err: #ff6b6b; --input: #171a20; --chip: #292d36;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 14px; padding: 20px 26px; background: var(--card); border-bottom: 1px solid var(--line); }
+header img { width: 44px; height: 44px; }
+header h1 { margin: 0; font-size: 19px; font-weight: 650; }
+header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+main { flex: 1; min-height: 0; overflow: auto; padding: 22px 26px; display: grid; gap: 16px; align-content: start; }
+label.field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.row { display: flex; gap: 8px; }
+input[type=text] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; width: 100%; }
+label.check { display: flex; gap: 9px; align-items: center; cursor: pointer; }
+.checks { display: grid; gap: 10px; }
+button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; padding: 7px 16px; cursor: pointer; font-weight: 550; white-space: nowrap; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button:disabled { opacity: .5; cursor: default; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 26px; border-top: 1px solid var(--line); background: var(--card); }
+.status { display: flex; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status.ok { border-color: var(--ok); } .status.err { border-color: var(--err); color: var(--err); }
+.mark { font-weight: 700; font-size: 18px; flex: none; }
+.hidden { display: none !important; }
+a { color: var(--accent); }
+pre.license { margin: 0; max-height: 170px; overflow: auto; font: 11.5px/1.45 "Cascadia Mono", Consolas, monospace; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; }
+code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<header>
+  <img src="{{LOGO}}" alt="">
+  <div><h1>Instalar o vpn_specify</h1><p id="sub">VPN só para os apps que você escolher.</p></div>
+</header>
+
+<main id="pgOptions">
+  <label class="field">Pasta de instalação
+    <div class="row"><input type="text" id="dir" spellcheck="false"><button onclick="browse()">Procurar…</button></div>
+  </label>
+  <div class="checks">
+    <label class="check"><input type="checkbox" id="desktop" checked> Criar atalho na Área de Trabalho</label>
+    <label class="check"><input type="checkbox" id="startMenu" checked> Criar atalho no Menu Iniciar (aparece na pesquisa do Windows)</label>
+  </div>
+  <p class="hint">Nada é baixado da internet: todos os arquivos já estão no instalador.
+    Para conectar em VPNs OpenVPN (.ovpn) é preciso ter o OpenVPN instalado; WireGuard (.conf) funciona sem nada extra.</p>
+  <p class="hint">O vpn_specify é software livre, distribuído sob a licença MIT.
+    <a href="#" onclick="toggleLicense(); return false">Ver licença</a></p>
+  <pre id="license" class="license hidden"></pre>
+</main>
+
+<main id="pgProgress" class="hidden">
+  <div class="status" id="status"><div class="spinner" id="spin"></div><span class="mark hidden" id="mark"></span><div id="msg">Instalando…</div></div>
+  <div id="doneExtra" class="hidden checks">
+    <p class="hint">Instalado em <code id="doneDir"></code>. Para desinstalar, use Configurações › Aplicativos › Aplicativos instalados.</p>
+    <label class="check"><input type="checkbox" id="launch" checked> Abrir o vpn_specify agora</label>
+  </div>
+</main>
+
+<footer>
+  <button id="btnCancel" onclick="vsClose()">Cancelar</button>
+  <button id="btnMain" class="primary" onclick="install()">Instalar</button>
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let phase = "options";
+
+(async () => {
+  const i = await vsInit();
+  $("dir").value = i.dir;
+  $("license").textContent = i.license;
+  $("sub").textContent = `Versão ${i.version}` + (i.upgrade ? " · atualiza a instalação existente" : "");
+  if (i.upgrade) $("btnMain").textContent = "Atualizar";
+})();
+
+function toggleLicense() { $("license").classList.toggle("hidden"); }
+
+async function browse() {
+  const p = await vsBrowse($("dir").value);
+  if (p) $("dir").value = p;
+}
+
+async function install() {
+  if (phase === "done") { vsFinish($("launch").checked); return; }
+  if (phase === "failed") { show("options"); return; }
+  show("progress");
+  try {
+    await vsInstall({ dir: $("dir").value, desktop: $("desktop").checked, startMenu: $("startMenu").checked });
+  } catch (e) { finish({ error: String(e) }); return; }
+  poll();
+}
+
+async function poll() {
+  const p = await vsProgress();
+  $("msg").textContent = p.message;
+  if (p.done) finish(p); else setTimeout(poll, 250);
+}
+
+function finish(p) {
+  $("spin").classList.add("hidden");
+  $("mark").classList.remove("hidden");
+  $("btnMain").disabled = false;
+  if (p.error) {
+    phase = "failed";
+    $("status").className = "status err";
+    $("mark").textContent = "✕";
+    $("msg").textContent = p.error;
+    $("btnMain").textContent = "Voltar";
+    $("btnCancel").disabled = false;
+    $("btnCancel").textContent = "Fechar";
+    return;
+  }
+  phase = "done";
+  $("status").className = "status ok";
+  $("mark").textContent = "✓";
+  $("msg").textContent = "O vpn_specify foi instalado.";
+  $("doneDir").textContent = p.dir;
+  $("doneExtra").classList.remove("hidden");
+  $("btnCancel").classList.add("hidden");
+  $("btnMain").textContent = "Concluir";
+}
+
+function show(pg) {
+  phase = pg;
+  $("pgOptions").classList.toggle("hidden", pg !== "options");
+  $("pgProgress").classList.toggle("hidden", pg !== "progress");
+  if (pg === "progress") {
+    $("status").className = "status";
+    $("spin").classList.remove("hidden");
+    $("mark").classList.add("hidden");
+    $("doneExtra").classList.add("hidden");
+    $("btnMain").disabled = true;
+    $("btnCancel").disabled = true;
+  } else {
+    $("btnMain").disabled = false;
+    $("btnCancel").disabled = false;
+    $("btnCancel").textContent = "Cancelar";
+    $("btnMain").textContent = "Instalar";
+  }
+}
+</script>
+</body>
+</html>
