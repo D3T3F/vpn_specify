@@ -1,10 +1,11 @@
 package setup
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"vpn_specify/internal/i18n"
 )
 
 const (
@@ -12,21 +13,22 @@ const (
 	MainExe   = "vpn_specify.exe"
 	CLIExe    = "vpn_specify-cli.exe"
 	Publisher = "vpn_specify"
-	// chave de "Aplicativos instalados" (Painel de Controle / Configurações)
+	// "Installed apps" key (Control Panel / Settings)
 	uninstallKey = `Software\Microsoft\Windows\CurrentVersion\Uninstall\vpn_specify`
 	shortcutName = "vpn_specify.lnk"
 )
 
-// Options são as escolhas feitas na tela do instalador.
+// Options are the choices made in the installer window.
 type Options struct {
 	Dir       string `json:"dir"`
 	Desktop   bool   `json:"desktop"`
 	StartMenu bool   `json:"startMenu"`
+	Language  string `json:"language"` // interface language chosen in the installer
 }
 
-// DefaultDir é C:\Program Files\vpn_specify.
+// DefaultDir is C:\Program Files\vpn_specify.
 func DefaultDir() string {
-	pf := os.Getenv("ProgramW6432") // Program Files de 64 bits, mesmo num processo de 32
+	pf := os.Getenv("ProgramW6432") // 64-bit Program Files, even from a 32-bit process
 	if pf == "" {
 		pf = os.Getenv("ProgramFiles")
 	}
@@ -36,15 +38,15 @@ func DefaultDir() string {
 	return filepath.Join(pf, AppName)
 }
 
-// NormalizeDir garante um caminho absoluto terminado em \vpn_specify (quem
-// escolhe "D:\Apps" recebe "D:\Apps\vpn_specify").
+// NormalizeDir ensures an absolute path ending in \vpn_specify (choosing
+// "D:\Apps" gives "D:\Apps\vpn_specify").
 func NormalizeDir(dir string) (string, error) {
 	dir = strings.TrimSpace(strings.Trim(strings.TrimSpace(dir), `"`))
 	if dir == "" {
-		return "", errors.New("escolha a pasta de instalação")
+		return "", i18n.Error("choose the installation folder")
 	}
 	if !filepath.IsAbs(dir) || filepath.VolumeName(dir) == "" {
-		return "", errors.New(`use um caminho completo, por exemplo C:\Program Files\vpn_specify`)
+		return "", i18n.Error("use a full path, for example {0}", `C:\Program Files\vpn_specify`)
 	}
 	dir = filepath.Clean(dir)
 	if !strings.EqualFold(filepath.Base(dir), AppName) {

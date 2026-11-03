@@ -17,15 +17,16 @@ import (
 	"golang.org/x/sys/windows/registry"
 
 	"vpn_specify/internal/autostart"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/paths"
 	"vpn_specify/internal/platform"
 )
 
-// Uninstall remove o vpn_specify instalado na pasta deste executável
-// ("vpn_specify.exe uninstall", chamado por Aplicativos instalados).
+// Uninstall removes the vpn_specify installed in this executable's folder
+// ("vpn_specify.exe uninstall", called from Installed apps).
 //
-// Opções: /silent (sem perguntas nem mensagens; apaga os dados, a não ser
-// com /keepdata).
+// Options: /silent (no questions or messages; deletes the data unless
+// /keepdata is given).
 func Uninstall(args []string) error {
 	silent, keepData := false, false
 	for _, a := range args {
@@ -50,17 +51,14 @@ func Uninstall(args []string) error {
 		if silent {
 			fmt.Fprintln(os.Stderr, text)
 		} else {
-			platform.MessageBox("Desinstalar o vpn_specify", text, flags)
+			platform.MessageBox(i18n.T("Uninstall vpn_specify"), text, flags)
 		}
 	}
 
 	removeData := !keepData
 	if !silent {
-		answer := platform.Ask("Desinstalar o vpn_specify",
-			"Desinstalar o vpn_specify de "+dir+"?\n\n"+
-				"Sim: remove o programa e também seus dados (VPNs importadas, apps e senhas salvas).\n"+
-				"Não: remove só o programa e mantém os dados para uma reinstalação.\n"+
-				"Cancelar: não desinstala.", true)
+		answer := platform.Ask(i18n.T("Uninstall vpn_specify"),
+			i18n.T("Uninstall vpn_specify from {0}?\n\nYes: removes the program and also its data (imported VPNs, apps and saved passwords).\nNo: removes only the program and keeps the data for a reinstall.\nCancel: does not uninstall.", dir), true)
 		if answer == platform.AnswerCancel {
 			return nil
 		}
@@ -68,12 +66,12 @@ func Uninstall(args []string) error {
 	}
 
 	if len(RunningInstances(dir)) > 0 {
-		notify("Não foi possível desinstalar: "+errRunning.Error()+".", 0x30)
+		notify(i18n.T("Could not uninstall: {0}.", errRunning), 0x30)
 		return errRunning
 	}
 
 	var problems []string
-	// atalhos: os do instalador e os criados pelo app ("DiscordVPN" etc.), que apontariam para um exe apagado
+	// shortcuts: the installer's and the ones created by the app ("DiscordVPN" etc.), which would point to a deleted exe
 	for _, lnk := range append([]string{
 		filepath.Join(platform.StartMenuDir(), shortcutName),
 		filepath.Join(platform.DesktopDir(), shortcutName),
@@ -82,12 +80,12 @@ func Uninstall(args []string) error {
 			problems = append(problems, lnk)
 		}
 	}
-	// tarefa agendada dos apps que abrem com o sistema
+	// scheduled task of the apps that start with the system
 	if err := autostart.Disable(); err != nil {
-		problems = append(problems, "tarefa "+autostart.TaskName)
+		problems = append(problems, i18n.T("task {0}", autostart.TaskName))
 	}
 	if err := registry.DeleteKey(registry.LOCAL_MACHINE, uninstallKey); err != nil && !errors.Is(err, registry.ErrNotExist) {
-		problems = append(problems, "registro de desinstalação")
+		problems = append(problems, i18n.T("uninstall registration"))
 	}
 	if removeData {
 		if err := os.RemoveAll(dataDir); err != nil {
@@ -95,8 +93,8 @@ func Uninstall(args []string) error {
 		}
 	}
 
-	// só os arquivos que o instalador colocou; a pasta só some se ficar vazia
-	for _, f := range []string{CLIExe, `windivert\WinDivert.dll`, `windivert\WinDivert64.sys`, `windivert\LICENSE`, "LEIA-ME.txt", "LICENSE.txt"} {
+	// only the files the installer put there; the folder goes away only if empty
+	for _, f := range []string{CLIExe, `windivert\WinDivert.dll`, `windivert\WinDivert64.sys`, `windivert\LICENSE`, "LEIA-ME.txt", "README.txt", "LICENSE.txt"} {
 		removeOrDelay(filepath.Join(dir, f))
 	}
 	_ = os.Remove(filepath.Join(dir, "windivert"))
@@ -105,28 +103,28 @@ func Uninstall(args []string) error {
 	}
 	deleteSelfLater(exe, dir)
 
-	msg := "O vpn_specify foi desinstalado."
+	msg := i18n.T("vpn_specify was uninstalled.")
 	if !removeData {
-		msg += "\n\nSeus dados foram mantidos em " + dataDir + "."
+		msg += "\n\n" + i18n.T("Your data was kept in {0}.", dataDir)
 	}
 	if len(problems) > 0 {
-		msg += "\n\nNão consegui remover:\n" + strings.Join(problems, "\n")
+		msg += "\n\n" + i18n.T("Could not remove:") + "\n" + strings.Join(problems, "\n")
 	}
 	notify(msg, 0x40)
 	if len(problems) > 0 {
-		return fmt.Errorf("desinstalação incompleta: %s", strings.Join(problems, "; "))
+		return i18n.Error("incomplete uninstall: {0}", strings.Join(problems, "; "))
 	}
 	return nil
 }
 
-// appShortcuts lê, das configurações, os atalhos criados pelo app (e as
-// cópias de mesmo nome na Área de Trabalho).
+// appShortcuts reads from the settings the shortcuts created by the app (and
+// the same-named copies on the desktop).
 func appShortcuts(dataDir string) []string {
 	b, err := os.ReadFile(filepath.Join(dataDir, "settings.json"))
 	if err != nil {
 		return nil
 	}
-	var s struct { // só o que interessa de settings.json
+	var s struct { // only what matters from settings.json
 		Apps []struct {
 			Shortcut string `json:"shortcut"`
 		} `json:"apps"`
@@ -143,8 +141,8 @@ func appShortcuts(dataDir string) []string {
 	return out
 }
 
-// removeOrDelay apaga o arquivo ou, se ele estiver em uso (ex.: driver
-// WinDivert carregado), agenda a remoção para a próxima reinicialização.
+// removeOrDelay deletes the file or, if it is in use (e.g. the WinDivert
+// driver is loaded), schedules the removal for the next restart.
 func removeOrDelay(path string) {
 	err := os.Remove(path)
 	if err == nil || errors.Is(err, os.ErrNotExist) {
@@ -154,8 +152,8 @@ func removeOrDelay(path string) {
 	_ = windows.MoveFileEx(p, nil, windows.MOVEFILE_DELAY_UNTIL_REBOOT)
 }
 
-// deleteSelfLater apaga este .exe (e a pasta, se vazia) depois que o
-// processo terminar: um executável não consegue apagar a si mesmo.
+// deleteSelfLater deletes this .exe (and the folder, if empty) after the
+// process ends: an executable cannot delete itself.
 func deleteSelfLater(exe, dir string) {
 	script := fmt.Sprintf(`ping -n 3 127.0.0.1 >nul & del /f /q "%s" & rmdir "%s"`, exe, dir)
 	cmd := exec.Command(filepath.Join(os.Getenv("WINDIR"), "System32", "cmd.exe"))

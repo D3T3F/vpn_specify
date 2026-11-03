@@ -7,8 +7,8 @@ import (
 	"io/fs"
 )
 
-// Sem a tag "installer" não há arquivos embutidos (assim go build/vet ./...
-// funciona sem preparar a pasta payload\).
+// Without the "installer" tag nothing is embedded (so go build/vet ./...
+// work without preparing the payload\ folder).
 func payloadFS() (fs.FS, error) {
-	return nil, errors.New(`instalador compilado sem os arquivos do programa; use scripts\build.ps1 -Dist`)
+	return nil, errors.New(`installer built without the program files; use scripts\build.ps1 -Dist`)
 }

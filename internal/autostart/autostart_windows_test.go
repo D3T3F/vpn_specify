@@ -31,14 +31,14 @@ func TestTaskXML(t *testing.T) {
 			Args    string `xml:"Arguments"`
 		} `xml:"Actions>Exec"`
 	}
-	// o encoding declarado é UTF-16 (o arquivo é gravado assim); aqui lemos a string
+	// the declared encoding is UTF-16 (the file is written that way); here we read the string
 	d := xml.NewDecoder(strings.NewReader(strings.Replace(x, `encoding="UTF-16"`, `encoding="UTF-8"`, 1)))
 	if err := d.Decode(&v); err != nil {
-		t.Fatalf("XML inválido: %v\n%s", err, x)
+		t.Fatalf("invalid XML: %v\n%s", err, x)
 	}
 	if v.Triggers.Logon.UserId != `PC\Fulano & Cia` || v.Principals.P.RunLevel != "HighestAvailable" ||
 		v.Principals.P.LogonType != "InteractiveToken" || v.Settings.Limit != "PT0S" ||
 		v.Exec.Command != `"C:\Program Files\vpn_specify\vpn_specify.exe"` || v.Exec.Args != "autostart" {
-		t.Errorf("tarefa errada: %+v", v)
+		t.Errorf("wrong task: %+v", v)
 	}
 }

@@ -2,8 +2,8 @@
 
 package update
 
-import "errors"
+import "vpn_specify/internal/i18n"
 
 func Prepare(archive, ver string, relaunch bool) (*Plan, error) {
-	return nil, errors.New("atualização automática não disponível neste sistema; baixe em " + ReleasesPage)
+	return nil, i18n.Error("automatic updates are not available on this system; download from {0}", ReleasesPage)
 }

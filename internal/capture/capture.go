@@ -1,6 +1,6 @@
 package capture
 
-// Controller controla a captura por processo (WinDivert, só no Windows).
+// Controller controls per-process capture (WinDivert, Windows only).
 type Controller interface {
 	AddNames(names []string)
 	Names() []string

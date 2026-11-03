@@ -10,11 +10,11 @@ import (
 	"vpn_specify/internal/platform"
 )
 
-// Main: "vpn_specify.exe" sem argumentos.
+// Main: "vpn_specify.exe" without arguments.
 func Main() error {
 	platform.AllowForeground()
 	if err := control.Call("show", nil); err == nil {
-		return nil // já existe uma instância: ela mostra a janela
+		return nil // an instance already exists: it shows the window
 	}
 	if !platform.IsElevated() {
 		return platform.ElevateSelf([]string{"agent"})
@@ -22,7 +22,7 @@ func Main() error {
 	return runAgent(true, "", false)
 }
 
-// LaunchMain: "vpn_specify.exe launch <id>" (usado pelos atalhos).
+// LaunchMain: "vpn_specify.exe launch <id>" (used by the shortcuts).
 func LaunchMain(id string) error {
 	platform.AllowForeground()
 	err := control.Call("launch", url.Values{"id": {id}})
@@ -39,8 +39,8 @@ func LaunchMain(id string) error {
 	return runAgent(false, id, false)
 }
 
-// AutostartMain: "vpn_specify.exe autostart", rodado pela tarefa agendada no
-// logon (já com privilégio máximo, sem UAC).
+// AutostartMain: "vpn_specify.exe autostart", run by the scheduled task at
+// logon (already with highest privileges, no UAC).
 func AutostartMain() error {
 	if err := control.Call("autostart", nil); err == nil {
 		return nil
@@ -51,7 +51,7 @@ func AutostartMain() error {
 	return runAgent(false, "", true)
 }
 
-// AgentMain: instância elevada (aberta via UAC).
+// AgentMain: elevated instance (opened through UAC).
 func AgentMain(args []string) error {
 	id := ""
 	if len(args) == 2 && args[0] == "-launch" {

@@ -6,12 +6,12 @@ import (
 	"sync"
 )
 
-// ---------- log em memória (para a tela) ----------
+// ---------- in-memory log (shown in the window) ----------
 
 type logRing struct {
 	mu    sync.Mutex
 	lines []string
-	base  int // índice global da primeira linha guardada
+	base  int // global index of the first kept line
 }
 
 func (r *logRing) Write(b []byte) (int, error) {

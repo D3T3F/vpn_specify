@@ -1,448 +1,506 @@
 # vpn_specify
 
-Conecta numa VPN **só para os apps que você escolher**. O resto do computador
-continua na sua rede normal.
+**English** · [Português (Brasil)](docs/README.pt-BR.md) · [Español](docs/README.es.md) · [Français](docs/README.fr.md) · [Deutsch](docs/README.de.md) · [Русский](docs/README.ru.md) · [简体中文](docs/README.zh-CN.md) · [日本語](docs/README.ja.md) · [हिन्दी](docs/README.hi.md) · [العربية](docs/README.ar.md)
+
+Connects to a VPN **only for the apps you choose**. The rest of the computer
+stays on your normal network.
 
 ```
             ┌──────────────── vpn_specify ────────────────┐
- chrome ──► │ proxy SOCKS5 127.0.0.1:10800 ┐               │
- curl   ──► │ proxy HTTP   127.0.0.1:10801 ┴──► túnel VPN ─┼──► rede da VPN
+ chrome ──► │ SOCKS5 proxy 127.0.0.1:10800 ┐               │
+ curl   ──► │ HTTP proxy   127.0.0.1:10801 ┴──► VPN tunnel ┼──► VPN network
             └─────────────────────────────────────────────┘
- resto do PC ─────────────────────────────────────────────────► internet normal
+ rest of the PC ──────────────────────────────────────────────► normal internet
 ```
 
-Sem serviço rodando em segundo plano. Dois executáveis do mesmo código:
+No background service. On Windows there are two executables built from the
+same code:
 
-- `vpn_specify.exe`: interface gráfica (sem console).
-- `vpn_specify-cli.exe`: os comandos de terminal (`up`, `run`, `status`).
+- `vpn_specify.exe`: graphical interface (no console).
+- `vpn_specify-cli.exe`: the terminal commands (`up`, `run`, `status`, `update`).
 
-No Linux é um executável só, `vpn_specify`, com interface gráfica e
-terminal (veja [Linux](#linux)).
+On Linux there is a single executable, `vpn_specify`, with both the graphical
+interface and the terminal commands (see [Linux](#linux)).
 
-## Instalação
+The interface, installer and messages are available in **10 languages**
+(see [Languages](#languages)).
 
-Baixe/gere o `vpn_specify-<versão>-win64.zip` (veja [Compilar](#compilar)),
-extraia e execute `vpn_specify-setup.exe`:
+## Installation
 
-- Pasta padrão: `C:\Program Files\vpn_specify` (pode escolher outra em **Procurar…**).
-- Opções: atalho na Área de Trabalho e no Menu Iniciar.
-- Nada é baixado da rede: o programa e o WinDivert já vão dentro do instalador.
-- Rodar o instalador de novo atualiza a instalação existente (na mesma pasta).
-- Desinstalar: Configurações > Aplicativos > Aplicativos instalados >
-  vpn_specify. Você escolhe se apaga ou mantém os dados. Os atalhos criados
-  pelo app (ex.: `DiscordVPN`) também são removidos.
+Download (or build, see [Building](#building)) `vpn_specify-<version>-win64.zip`,
+extract it and run `vpn_specify-setup.exe`:
 
-Sem cliques (para scripts):
+- Choose the language at the top of the installer window; the app uses it
+  from then on (you can change it later in **Preferences**).
+- Default folder: `C:\Program Files\vpn_specify` (pick another with **Browse…**).
+- Options: desktop and Start menu shortcuts.
+- Nothing is downloaded: the program and WinDivert are inside the installer.
+- Running the installer again updates the existing installation (same folder).
+- Uninstall: Settings > Apps > Installed apps > vpn_specify. You choose
+  whether to delete or keep the data. Shortcuts created by the app (e.g.
+  `DiscordVPN`) are removed too.
+
+Unattended (for scripts):
 
 ```powershell
-vpn_specify-setup.exe /silent [/dir=D:\Apps] [/nodesktop] [/nostartmenu]
+vpn_specify-setup.exe /silent [/dir=D:\Apps] [/nodesktop] [/nostartmenu] [/lang=pt-BR]
 "C:\Program Files\vpn_specify\vpn_specify.exe" uninstall /silent [/keepdata]
 ```
 
-Também funciona sem instalar (modo portátil): basta ter a pasta `data\` (ou
-um arquivo vazio chamado `portable`) ao lado do `vpn_specify.exe`.
+It also works without installing (portable mode): just have a `data\` folder
+(or an empty file named `portable`) next to `vpn_specify.exe`.
 
-## Interface gráfica
+## Graphical interface
 
-Abra `vpn_specify.exe`. O Windows pede permissão de Administrador.
+Open `vpn_specify.exe`. Windows asks for Administrator permission.
 
-1. **VPNs > Importar arquivo…**: o `.ovpn`/`.conf` é copiado para a pasta de
-   dados. Se a VPN pede login, use **Credenciais**: a senha é guardada com
-   DPAPI, então só a sua conta do Windows consegue ler. **Editar** permite
-   renomear a VPN (os apps que a usam acompanham) e alterar o conteúdo do
-   arquivo; é preciso desconectar essa VPN antes.
-2. **Apps na VPN > Adicionar app…**: escolha o `.exe` ou um atalho do Menu
-   Iniciar (ex.: Discord). Para apps com atualizador (`Update.exe --processStart
-   Discord.exe`) o processo certo (`discord.exe`) é detectado sozinho.
-   - *Captura completa* (padrão): todo o tráfego, incluindo voz/UDP (WinDivert).
-   - *Proxy*: só TCP, para navegadores e apps Chromium; não precisa de driver.
-3. **Criar atalho**: cria, por exemplo, `DiscordVPN` no Menu Iniciar (e,
-   se quiser, na Área de Trabalho). Ele aparece na pesquisa do Windows ao lado
-   do Discord original.
+1. **VPNs > Import file…**: the `.ovpn`/`.conf` is copied into the data
+   folder. If the VPN needs a login, use **Credentials**: the password is
+   stored with DPAPI, so only your Windows account can read it. **Edit** lets
+   you rename the VPN (the apps using it follow) and change the file content;
+   that VPN must be disconnected first.
+2. **Apps in the VPN > Add app…**: choose the `.exe` or a Start menu shortcut
+   (e.g. Discord). For apps with an updater (`Update.exe --processStart
+   Discord.exe`) the right process (`discord.exe`) is detected automatically.
+   - *Full capture* (default): all traffic, including voice/UDP (WinDivert).
+   - *Proxy*: TCP only, for browsers and Chromium apps; no driver needed.
+3. **Create shortcut**: creates, for example, `DiscordVPN` in the Start menu
+   (and, if you want, on the desktop). It shows up in Windows search next to
+   the original Discord.
 
-Ao abrir um atalho:
+When a shortcut is opened:
 
-- Se a VPN não está ligada, o UAC aparece uma vez. Uma janela mostra o
-  progresso, conecta, abre o app e fecha sozinha.
-- Se a VPN já está ligada, o app abre na hora, sem UAC.
-- O app abre como usuário comum, não como Administrador.
-- Com "Desconectar quando os apps forem fechados" marcado e a janela fechada,
-  a VPN desliga sozinha uns 30 s depois que os apps fecharem.
+- If the VPN is off, UAC appears once. A window shows the progress,
+  connects, opens the app and closes by itself.
+- If the VPN is already on, the app opens right away, without UAC.
+- The app opens as a normal user, not as Administrator.
+- With "Disconnect the VPN when the apps opened through it are closed"
+  checked and the window closed, the VPN turns off about 30 s after the apps
+  close.
 
-### Apps que abrem com o sistema
+### Apps that start with the system
 
-No diálogo do app (**Adicionar app…** ou **Editar**), marque **Abrir junto
-com o Windows**. Ao entrar na conta, o vpn_specify conecta a VPN e abre todos
-os apps marcados, sem mostrar a janela. Na lista, eles aparecem com o selo
-"inicia com o sistema".
+In the app dialog (**Add app…** or **Edit**), check **Open with Windows**.
+When you sign in, vpn_specify connects the VPN and opens every marked app,
+without showing the window. In the list they carry the "starts with the
+system" badge.
 
-- **Sem UAC no logon**: o vpn_specify cria uma tarefa agendada,
-  `vpn_specify\Iniciar apps na VPN` (em Agendador de Tarefas), que roda
-  `vpn_specify.exe autostart` 15 s depois do logon, já com privilégio de
-  administrador. Os apps abrem como usuário comum, como nos atalhos.
-- No Linux a opção é **Abrir junto com o sistema**. A entrada fica em
-  `~/.config/autostart/vpn_specify.desktop` e roda 10 s depois de entrar na
-  sessão. VPNs OpenVPN pedem a senha de administrador nessa hora.
-- Há uma entrada só, criada quando o primeiro app é marcado e removida
-  quando nenhum estiver. Ela é atualizada sempre que o vpn_specify abre, e
-  segue o executável se ele mudar de pasta ou for atualizado.
-- Como só uma VPN fica ativa por vez, os apps marcados precisam usar a
-  **mesma VPN**. A tela avisa se não usarem.
-- Logo depois do logon a rede pode demorar. Cada app é tentado até 4 vezes,
-  com pausas. Senha recusada ou credenciais faltando não são repetidas. O
-  que não abrir aparece numa mensagem.
-- O desinstalador remove a tarefa.
+- **No UAC at sign-in**: vpn_specify creates a scheduled task,
+  `vpn_specify\Start apps in VPN` (in Task Scheduler), that runs
+  `vpn_specify.exe autostart` 15 s after sign-in, already with administrator
+  privileges. The apps open as a normal user, like with shortcuts.
+- On Linux the option is **Open with the system**. The entry is
+  `~/.config/autostart/vpn_specify.desktop` and runs 10 s after you log in.
+  OpenVPN VPNs ask for the administrator password at that moment.
+- There is a single entry, created when the first app is marked and removed
+  when none is. It is refreshed every time vpn_specify starts, so it follows
+  the executable if it moves or is updated.
+- Only one VPN is active at a time, so the marked apps must use the **same
+  VPN**. The window warns you otherwise.
+- Right after sign-in the network may take a while. Each app is tried up to 4
+  times, with pauses. A refused password or missing credentials are not
+  retried. Whatever fails to open is shown in a message.
+- The uninstaller removes the task.
 
-Só uma VPN fica ativa por vez. Evite capturar nomes genéricos como
-`cmd.exe`, porque todos os processos com esse nome entram na VPN.
+Only one VPN is active at a time. Avoid capturing generic names such as
+`cmd.exe`: every process with that name would enter the VPN.
 
-Pasta de dados (botão **Pasta de dados**): `configs\`, `settings.json` (apps
-e preferências) e `vpn_specify.log`. Fica em `%LOCALAPPDATA%\vpn_specify`
-quando instalado, ou em `data\` ao lado do exe no modo portátil.
+Data folder (**Data folder** button): `configs\`, `settings.json` (apps and
+preferences), `language` and `vpn_specify.log`. It is
+`%LOCALAPPDATA%\vpn_specify` when installed, or `data\` next to the exe in
+portable mode.
 
-Não rode a versão instalada e uma cópia portátil ao mesmo tempo: as duas
-usam as mesmas portas locais (10799–10801).
+Do not run the installed version and a portable copy at the same time: both
+use the same local ports (10799–10801).
 
-## Formatos suportados
+## Supported formats
 
-| Config | Como funciona | Precisa de admin? |
+| Config | How it works | Needs admin? |
 |---|---|---|
-| **WireGuard** (`.conf`) | O túnel roda inteiro dentro do processo (wireguard-go + pilha TCP/IP gVisor). Nenhum adaptador de rede é criado. | Não |
-| **OpenVPN** (`.ovpn`) | Usa o `openvpn.exe` instalado, mas bloqueia tudo que mudaria o roteamento ou o DNS do Windows (redirect-gateway, rotas, DNS, block-outside-dns). O proxy liga os sockets ao IP do túnel, e é isso que manda o tráfego pela VPN. | Sim (o OpenVPN cria um adaptador) |
+| **WireGuard** (`.conf`) | The tunnel runs entirely inside the process (wireguard-go + gVisor TCP/IP stack). No network adapter is created. | No |
+| **OpenVPN** (`.ovpn`) | Runs the installed `openvpn`, but blocks everything that would change the system routing or DNS (redirect-gateway, routes, DNS, block-outside-dns). The proxy binds its sockets to the tunnel, which is what sends the traffic through the VPN. | Yes (OpenVPN creates an adapter) |
 
-## Uso
+## Usage
 
 ```powershell
-# 1. Conectar (deixe esse terminal aberto; Ctrl+C desconecta)
-vpn_specify-cli up C:\vpns\trabalho.ovpn
+# 1. Connect (keep this terminal open; Ctrl+C disconnects)
+vpn_specify-cli up C:\vpns\work.ovpn
 
-# 2. Em outro terminal, abrir apps dentro da VPN
-vpn_specify-cli run chrome                       # Chrome separado, só ele na VPN
+# 2. In another terminal, open apps inside the VPN
+vpn_specify-cli run chrome                       # separate Chrome, only it in the VPN
 vpn_specify-cli run firefox
-vpn_specify-cli run msedge https://intranet.empresa
+vpn_specify-cli run msedge https://intranet.company
 vpn_specify-cli run curl https://ifconfig.me
-vpn_specify-cli run git clone https://git.interno/repo.git
-vpn_specify-cli run powershell                   # shell cujos comandos usam o proxy
+vpn_specify-cli run git clone https://git.internal/repo.git
+vpn_specify-cli run powershell                   # shell whose commands use the proxy
 
-# Conectar e já abrir um app
+# Connect and open an app right away
 vpn_specify-cli up wg0.conf -- chrome
 
-# Conferir: IP direto vs IP pela VPN, em TCP e em UDP
+# Check: direct IP vs IP through the VPN, over TCP and UDP
 vpn_specify-cli status
 ```
 
-### Captura por processo (`-capture`): TUDO de um app pela VPN
+### Per-process capture (`-capture`): ALL of an app through the VPN
 
-Para apps que ignoram proxy ou usam UDP próprio (Discord com voz, jogos,
-apps nativos), o `-capture` intercepta os pacotes do processo pelo nome do
-executável. Nada precisa ser configurado no app:
+For apps that ignore proxies or use their own UDP (Discord voice, games,
+native apps), `-capture` intercepts the packets of the process by its
+executable name. Nothing needs to be configured in the app:
 
 ```powershell
-# terminal como Administrador
-vpn_specify-cli up trabalho.ovpn -capture discord.exe
-# depois abra o Discord normalmente (atalho do Menu Iniciar)
+# terminal running as Administrator
+vpn_specify-cli up work.ovpn -capture discord.exe
+# then open Discord normally (Start menu shortcut)
 ```
 
-- **TCP** vai por um proxy transparente; **UDP** (voz, vídeo) vai por sockets
-  dentro da VPN; **IPv6** do processo é bloqueado, para o app usar IPv4 pela VPN.
-- Os outros programas não são afetados, mas todo pacote de saída passa pelo
-  `vpn_specify`, o que custou uns 10% de velocidade no teste.
-- Se o app já estava aberto, as conexões TCP dele são derrubadas para
-  reconectarem pela VPN. O mais garantido é abrir o app depois do `up`.
-- Pode repetir: `-capture discord.exe -capture steam.exe`.
-- Funciona com WireGuard e com OpenVPN.
-- Os nomes (DNS) que o app resolve pelo Windows continuam usando o DNS normal
-  do PC: o servidor DNS vê *quais* domínios, mas o tráfego vai pela VPN.
+- **TCP** goes through a transparent proxy; **UDP** (voice, video) through
+  sockets inside the VPN; the process's **IPv6** is blocked, so the app uses
+  IPv4 through the VPN.
+- Other programs are not affected, but every outgoing packet passes through
+  `vpn_specify`, which cost about 10% of speed in testing.
+- If the app was already open, its TCP connections are dropped so they
+  reconnect through the VPN. Opening the app after `up` is the safest.
+- Repeatable: `-capture discord.exe -capture steam.exe`.
+- Works with WireGuard and OpenVPN.
+- Names (DNS) the app resolves through Windows still use the PC's normal DNS:
+  the DNS server sees *which* domains, but the traffic goes through the VPN.
 
-Requisitos: Administrador e os arquivos do [WinDivert 2.2.2](https://github.com/basil00/WinDivert/releases/tag/v2.2.2)
-(`WinDivert.dll` e `WinDivert64.sys`, x64) em `.\windivert\` ou ao lado do
-`.exe`. O Windows Defender costuma marcar o WinDivert como indesejado, porque
-malwares também o usam. É preciso liberar a pasta em Segurança do Windows > Exclusões.
-Durante a captura existe uma regra de firewall temporária "vpn_specify captura",
-removida ao sair.
+Requirements: Administrator and the [WinDivert 2.2.2](https://github.com/basil00/WinDivert/releases/tag/v2.2.2)
+files (`WinDivert.dll` and `WinDivert64.sys`, x64) in `.\windivert\` or next to
+the `.exe`. Windows Defender often flags WinDivert as unwanted, because malware
+uses it too; allow the folder in Windows Security > Exclusions. During capture
+there is a temporary firewall rule, "vpn_specify capture", removed on exit.
 
 ### UDP
 
-Há duas formas:
+There are two ways:
 
-1. **SOCKS5 UDP** (`127.0.0.1:10800`, UDP ASSOCIATE): para apps que
-   suportam UDP via SOCKS5.
-2. **Encaminhamento de porta `-L`**: funciona com **qualquer** programa,
-   mesmo os que não sabem usar proxy. A porta local vira um endereço dentro da VPN:
+1. **SOCKS5 UDP** (`127.0.0.1:10800`, UDP ASSOCIATE): for apps that support
+   UDP over SOCKS5.
+2. **`-L` port forwarding**: works with **any** program, even those that do
+   not know about proxies. The local port becomes an address inside the VPN:
 
 ```powershell
-vpn_specify-cli up trabalho.ovpn -L udp:15353=10.0.0.5:53 -L tcp:13389=servidor-interno:3389
-# agora: DNS interno em 127.0.0.1:15353 e RDP interno em 127.0.0.1:13389
+vpn_specify-cli up work.ovpn -L udp:15353=10.0.0.5:53 -L tcp:13389=internal-server:3389
+# now: internal DNS at 127.0.0.1:15353 and internal RDP at 127.0.0.1:13389
 mstsc /v:127.0.0.1:13389
 ```
 
-`-L` aceita `[tcp|udp:]portaLocal=host:porta` (ou `ip:porta` local) e pode ser
-repetido. Para UDP, cada origem local ganha sua própria sessão; sessões sem
-resposta por 2 minutos são fechadas.
+`-L` accepts `[tcp|udp:]localPort=host:port` (or a local `ip:port`) and is
+repeatable. For UDP, each local source gets its own session; sessions without
+a reply for 2 minutes are closed.
 
-### Opções úteis
+### Useful options
 
-- `up -v`: log completo (inclusive do OpenVPN).
-- `up -dns 10.0.0.53`: força o DNS usado dentro da VPN.
-- `up -socks 127.0.0.1:20800 -http 127.0.0.1:20801`: outras portas, por exemplo para duas VPNs ao mesmo tempo. Use as mesmas portas no `run`.
-- `run -profile cliente2 chrome`: perfil de navegador separado (cookies, logins).
-- `run -chromium <app Electron>`: força as flags de proxy do Chromium.
-- `run -detach <programa>`: não espera o programa terminar.
+- `up -v`: full log (including OpenVPN's).
+- `up -dns 10.0.0.53`: force the DNS used inside the VPN.
+- `up -socks 127.0.0.1:20800 -http 127.0.0.1:20801`: other ports, e.g. for two VPNs at once. Use the same ports with `run`.
+- `run -profile client2 chrome`: separate browser profile (cookies, logins).
+- `run -chromium <Electron app>`: force the Chromium proxy flags.
+- `run -detach <program>`: do not wait for the program to finish.
 
-## Como cada app é colocado na VPN
+## How each app is put in the VPN
 
-- **Chrome / Edge / Brave / Vivaldi**: `--proxy-server=socks5://...`, um perfil
-  próprio em `%LOCALAPPDATA%\vpn_specify\profiles\` (senão a janela abriria no
-  Chrome que já está aberto, fora da VPN), DNS remoto e WebRTC só pelo proxy.
-- **Firefox**: perfil próprio com proxy SOCKS5, DNS remoto e DoH desativado.
-- **Qualquer outro programa**: variáveis `HTTP_PROXY`, `HTTPS_PROXY` e
-  `ALL_PROXY`. Funciona com curl, git, npm, pip, Go, .NET HttpClient e vários outros.
+- **Chrome / Edge / Brave / Vivaldi**: `--proxy-server=socks5://...`, a profile
+  of its own under `%LOCALAPPDATA%\vpn_specify\profiles\` (otherwise the
+  window would open in the Chrome already running, outside the VPN), remote
+  DNS and WebRTC only through the proxy.
+- **Firefox**: its own profile with a SOCKS5 proxy, remote DNS and DoH off.
+- **Any other program**: the `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY`
+  variables. Works with curl, git, npm, pip, Go, .NET HttpClient and many
+  others.
 
-Os nomes (DNS) são resolvidos **dentro da VPN**, então nomes internos
-(`intranet.empresa`) funcionam e não vazam para o DNS da sua rede.
+Names (DNS) are resolved **inside the VPN**, so internal names
+(`intranet.company`) work and do not leak to your network's DNS.
 
-## Limitações
+## Limitations
 
-- **Apps que ignoram proxy**: use `-capture` (ou `-L` para endereços fixos).
-- Chrome e Firefox não mandam UDP (QUIC/HTTP3) por SOCKS; eles usam TCP, o
-  que funciona normalmente.
-- UDP e o modo OpenVPN só funcionam com **IPv4**.
-- Se o `vpn_specify` for morto à força, o `openvpn.exe` morre junto (Job
-  Object), mas a rota de métrica 9999 pode ficar no adaptador TAP
-  desconectado. Ela não afeta nada; o Ctrl+C normal remove tudo.
-- O proxy escuta só em `127.0.0.1`, mas **qualquer programa do seu PC** pode
-  usá-lo enquanto o `up` estiver rodando.
+- **Apps that ignore proxies**: use `-capture` (or `-L` for fixed addresses).
+- Chrome and Firefox do not send UDP (QUIC/HTTP3) over SOCKS; they fall back
+  to TCP, which works normally.
+- UDP and OpenVPN mode only work with **IPv4**.
+- If `vpn_specify` is killed, `openvpn` dies with it (Job Object on Windows,
+  SIGTERM on Linux), but the metric-9999 route may stay on the disconnected
+  TAP adapter. It affects nothing; a normal Ctrl+C removes everything.
+- The proxy only listens on `127.0.0.1`, but **any program on your PC** can
+  use it while `up` is running.
 
 ## Linux
 
-No Linux funcionam a interface gráfica e os comandos de terminal (`up`,
-`run`, `status` e `-L`), com WireGuard e OpenVPN, nas mesmas portas do
-Windows. O instalador e o `-capture` continuam só no Windows.
+On Linux the graphical interface and the terminal commands (`up`, `run`,
+`status`, `update` and `-L`) work, with WireGuard and OpenVPN, on the same
+ports as on Windows. The installer and `-capture` remain Windows-only.
 
 ```sh
-tar -xzf vpn_specify-<versão>-linux-amd64.tar.gz   # ou -linux-arm64
-sudo install vpn_specify-<versão>-linux-amd64/vpn_specify /usr/local/bin/
-vpn_specify                                # abre a interface gráfica
+tar -xzf vpn_specify-<version>-linux-amd64.tar.gz   # or -linux-arm64
+sudo install vpn_specify-<version>-linux-amd64/vpn_specify /usr/local/bin/
+vpn_specify                                # opens the graphical interface
 ```
 
-### Interface gráfica no Linux
+### Graphical interface on Linux
 
-Abra `vpn_specify` sem argumentos. Na primeira vez, use **Preferências >
-Adicionar "vpn_specify" ao menu de aplicativos** para ter o ícone no menu.
-A tela é a mesma do Windows, com estas diferenças:
+Run `vpn_specify` without arguments. The first time, use **Preferences > Add
+"vpn_specify" to the applications menu** to get the icon in the menu. The
+window is the same as on Windows, with these differences:
 
-- **Janela**: é a mesma página do Windows, servida pelo próprio vpn_specify
-  em `127.0.0.1` (porta aleatória, protegida por um token aleatório). Ela é
-  aberta como janela de app, sem abas nem barra de endereço, do Chrome,
-  Chromium, Edge, Brave ou Vivaldi, com um perfil separado. Sem nenhum
-  deles, ela abre como aba no navegador padrão. Funciona com X11 e Wayland.
-- **Sem root**: a interface roda como usuário comum. Ao conectar uma VPN
-  **OpenVPN**, o sistema pede a senha de administrador (`pkexec`, do
-  polkit) só para o `openvpn`. Ele fica num pequeno processo auxiliar que o
-  encerra quando você desconecta ou fecha o vpn_specify. Prender o socket ao
-  túnel sem root precisa do kernel 5.7 ou mais novo. WireGuard não pede
-  senha nenhuma.
-- **Adicionar app** mostra os apps do menu de aplicativos (arquivos
-  `.desktop`, inclusive flatpak e snap), com busca. **Escolher arquivo…**
-  usa o zenity ou o kdialog; sem eles, digite o caminho no campo Programa.
-- **Só o modo proxy**: não há captura completa. Navegadores, apps
-  Chromium/Electron (Discord, Slack, VS Code…) e programas que respeitam
-  `HTTP_PROXY` entram na VPN. Voz/UDP do Discord e jogos não entram.
-- **Criar atalho** grava um `.desktop` em `~/.local/share/applications/`
-  (aparece na pesquisa do menu, ao lado do app original) e, se marcado, na
-  Área de Trabalho.
-- **Credenciais**: a senha é cifrada (AES-GCM) com uma chave em
-  `~/.local/share/vpn_specify/secret.key` (permissão 0600), separada do
-  `settings.json`. Ela fica protegida pelas permissões do arquivo, como uma
-  chave SSH, e não pelo chaveiro do sistema. Senhas salvas no Windows (DPAPI)
-  precisam ser digitadas de novo.
-- **Dados**: `~/.config/vpn_specify/` (`configs/`, `settings.json`,
+- **Window**: it is the same page as on Windows, served by vpn_specify itself
+  on `127.0.0.1` (random port, protected by a random token). It opens as an
+  app window (no tabs or address bar) of Chrome, Chromium, Edge, Brave or
+  Vivaldi, with a separate profile. Without any of them, it opens as a tab in
+  the default browser. Works with X11 and Wayland.
+- **No root**: the interface runs as a normal user. When connecting an
+  **OpenVPN** VPN, the system asks for the administrator password (`pkexec`,
+  from polkit) only for `openvpn`. It runs in a small helper process that
+  stops it when you disconnect or close vpn_specify. Binding sockets to the
+  tunnel without root needs kernel 5.7 or newer. WireGuard asks for no
+  password at all.
+- **Add app** lists the apps of the applications menu (`.desktop` files,
+  including flatpak and snap), with search. **Choose file…** uses zenity or
+  kdialog; without them, type the path in the Program field.
+- **Proxy mode only**: there is no full capture. Browsers, Chromium/Electron
+  apps (Discord, Slack, VS Code…) and programs that honor `HTTP_PROXY` enter
+  the VPN. Discord voice/UDP and games do not.
+- **Create shortcut** writes a `.desktop` in `~/.local/share/applications/`
+  (it shows up in the menu search, next to the original app) and, if checked,
+  on the desktop.
+- **Credentials**: the password is encrypted (AES-GCM) with a key in
+  `~/.local/share/vpn_specify/secret.key` (mode 0600), kept apart from
+  `settings.json`. It is protected by the file permissions, like an SSH key,
+  not by the system keyring. Passwords saved on Windows (DPAPI) must be typed
+  again.
+- **Data**: `~/.config/vpn_specify/` (`configs/`, `settings.json`, `language`,
   `vpn_specify.log`).
 
-O ciclo de vida é o do Windows. Ao abrir um atalho com a VPN desligada, a
-janela mostra o progresso, conecta, abre o app e fecha sozinha. Com a janela
-fechada, a VPN desliga uns 30 s depois que os apps abertos por ela fecharem.
+The lifecycle is the same as on Windows. Opening a shortcut with the VPN off
+shows the progress window, connects, opens the app and closes the window.
+With the window closed, the VPN turns off about 30 s after the apps opened
+through it close.
 
-### Terminal no Linux
+### Terminal on Linux
 
 ```sh
-vpn_specify up wg0.conf                    # WireGuard: sem root
-sudo vpn_specify up trabalho.ovpn          # OpenVPN: precisa de root e do pacote openvpn
+vpn_specify up wg0.conf                    # WireGuard: no root
+sudo vpn_specify up work.ovpn              # OpenVPN: needs root and the openvpn package
 
-# em outro terminal, como usuário comum
-vpn_specify run chrome                     # acha google-chrome-stable, chromium...
+# in another terminal, as a normal user
+vpn_specify run chrome                     # finds google-chrome-stable, chromium...
 vpn_specify run firefox
 vpn_specify run curl https://ifconfig.me
 vpn_specify status
 ```
 
-Diferenças em relação ao Windows:
+Differences from Windows:
 
-- **OpenVPN**: no Linux, ligar o socket ao IP do túnel não basta para ele
-  sair pelo túnel. Por isso o proxy prende os sockets à interface `tun` com
-  `SO_BINDTODEVICE` e deixa o `rp_filter` dessa interface em modo *loose*.
-  Sem isso, distribuições com `rp_filter` estrito (Fedora, RHEL) descartariam
-  as respostas. Rotas e DNS do sistema continuam intocados, como no Windows.
-  Se o `vpn_specify` for morto, o `openvpn` recebe SIGTERM e sai também.
-- **`sudo vpn_specify up ... -- programa`**: o programa é aberto como quem
-  chamou o `sudo`, não como root. O perfil do navegador fica na home desse
-  usuário. Mesmo assim, o mais simples é rodar o `run` em outro terminal, sem
-  `sudo`.
-- **Perfis dos navegadores**: ficam em `~/.config/vpn_specify/profiles/`.
-  Firefox e Chromium instalados por snap (padrão no Ubuntu) não podem ler
-  pastas ocultas da home, então nesses casos o perfil vai para
+- **OpenVPN**: on Linux, binding the socket to the tunnel IP is not enough for
+  it to leave through the tunnel. So the proxy binds its sockets to the `tun`
+  interface with `SO_BINDTODEVICE` and sets that interface's `rp_filter` to
+  *loose*. Without it, distributions with a strict `rp_filter` (Fedora, RHEL)
+  would drop the replies. System routes and DNS stay untouched, like on
+  Windows. If `vpn_specify` is killed, `openvpn` gets SIGTERM and exits too.
+- **`sudo vpn_specify up ... -- program`**: the program is opened as whoever
+  called `sudo`, not as root. The browser profile goes in that user's home.
+  Still, the simplest is to run `run` in another terminal, without `sudo`.
+- **Browser profiles**: in `~/.config/vpn_specify/profiles/`. Firefox and
+  Chromium installed as snaps (Ubuntu's default) cannot read hidden home
+  folders, so for them the profile goes in
   `~/snap/<app>/common/vpn_specify/profiles/`.
-- **Apps que ignoram proxy**: sem `-capture`, use `-L` para endereços fixos.
+- **Apps that ignore proxies**: without `-capture`, use `-L` for fixed
+  addresses.
 
-## Atualizações
+## Updates
 
-Ao abrir a interface, o vpn_specify consulta a última versão nas
-[releases do GitHub](https://github.com/D3T3F/vpn_specify/releases). Se
-houver uma mais nova, aparece um aviso no topo da janela:
+When the interface opens, vpn_specify checks the latest version in the
+[GitHub releases](https://github.com/D3T3F/vpn_specify/releases). If there is
+a newer one, a notice appears at the top of the window:
 
-- **Atualizar**: baixa o pacote, confere o SHA-256, desconecta, fecha,
-  instala e abre de novo já na versão nova.
-- **Agora não**: esconde o aviso até a próxima vez que o app abrir.
-- **Ignorar esta versão**: não avisa mais dessa versão, só da seguinte.
-- **Novidades**: mostra o texto da release.
+- **Update**: downloads the package, checks its SHA-256, disconnects, closes,
+  installs and opens again on the new version.
+- **Not now**: hides the notice until the next time the app opens.
+- **Skip this version**: no more notices about this version, only the next.
+- **What's new**: shows the release text.
 
-Em **Preferências** dá para desligar a busca ao abrir e procurar na hora
-(**Procurar atualizações**). No terminal:
+In **Preferences** you can turn the check on start off and check right away
+(**Check for updates**). In the terminal:
 
 ```sh
-vpn_specify update           # mostra a versão nova e pergunta se quer instalar
-vpn_specify update -check    # só verifica
-vpn_specify update -y        # instala sem perguntar
+vpn_specify update           # shows the new version and asks whether to install it
+vpn_specify update -check    # only checks
+vpn_specify update -y        # installs without asking
 vpn_specify version
 ```
 
-Como a versão nova é instalada:
+How the new version is installed:
 
-- **Windows, instalado**: o `vpn_specify-setup.exe` da release roda em modo
-  de atualização. Ele usa a mesma pasta, mantém os atalhos que existem e pede
-  o UAC se preciso.
-- **Windows, portátil**: o mesmo instalador só troca os arquivos da pasta,
-  sem registro nem atalhos.
-- **Linux**: o executável é trocado no lugar. Se a pasta exigir root (ex.:
-  `/usr/local/bin`), o sistema pede a senha (`pkexec`). Antes da troca, o
-  vpn_specify confere que o executável novo roda e informa a versão certa.
+- **Windows, installed**: the release's `vpn_specify-setup.exe` runs in update
+  mode. It uses the same folder, keeps the existing shortcuts and asks for UAC
+  if needed.
+- **Windows, portable**: the same installer only replaces the folder's
+  files, with no registry entries or shortcuts.
+- **Linux**: the executable is replaced in place. If the folder needs root
+  (e.g. `/usr/local/bin`), the system asks for the password (`pkexec`). Before
+  replacing it, vpn_specify checks that the new executable runs and reports
+  the right version.
 
-Segurança: o download só é aceito de
-`github.com/D3T3F/vpn_specify/releases/download/` e se o SHA-256 bater com
-o que o GitHub informa para o arquivo (ou com um `SHA256SUMS` na release).
-Sem hash, nada é instalado. Isso protege contra download corrompido ou
-adulterado no caminho, mas não contra alguém com acesso à conta do GitHub.
-Para isso seria preciso assinar os pacotes. Builds sem versão (`dev`) nunca
-procuram atualizações.
+Security: a download is only accepted from
+`github.com/D3T3F/vpn_specify/releases/download/` and if its SHA-256 matches
+what GitHub reports for the file (or a `SHA256SUMS` file in the release).
+Without a hash, nothing is installed. This protects against a download
+corrupted or tampered with on the way, not against someone with access to the
+GitHub account; for that the packages would need to be signed. Builds
+without a version (`dev`) never check for updates.
 
-### Publicar uma versão
+## Languages
 
-1. Mude o `VERSION` (ex.: `1.1.0`) e rode `.\scripts\build.ps1 -Test -Icon -Dist -Linux`.
-2. Crie a release com a tag **`v1.1.0`** (não marque como pré-release) e
-   anexe os arquivos de `dist\` **com estes nomes**, que o atualizador procura:
-   - `vpn_specify-1.1.0-win64.zip`
-   - `vpn_specify-1.1.0-linux-amd64.tar.gz`
-   - `vpn_specify-1.1.0-linux-arm64.tar.gz`
+The interface, installer, messages and terminal help are available in:
 
-   Um sistema sem pacote na release simplesmente não recebe o aviso. Por
-   isso a `v1.0.0`, que só tem o pacote do Windows, não aparece para quem
-   usa Linux.
-3. O texto da release aparece em **Novidades**.
+| Code | Language |
+|---|---|
+| `en` | English (default) |
+| `pt-BR` | Português (Brasil) |
+| `es` | Español |
+| `fr` | Français |
+| `de` | Deutsch |
+| `ru` | Русский |
+| `zh-CN` | 简体中文 |
+| `ja` | 日本語 |
+| `hi` | हिन्दी |
+| `ar` | العربية (right-to-left layout) |
 
-## Licença
+- **Default**: the system language when it is one of the above
+  (Windows display language; on Linux `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` or
+  `LANG`), otherwise English.
+- **Choosing**: at the top of the Windows installer, or later in
+  **Preferences > Language** (the window switches right away). The choice is
+  saved in the data folder (`language` file) and also applies to the terminal
+  commands. The silent installer takes `/lang=<code>`.
+- Technical logs and the help of each command-line flag stay in English.
 
-[MIT](LICENSE). O texto aparece no programa (Preferências > Ver licença), no
-instalador, nas propriedades dos `.exe` e vai no pacote como `LICENSE.txt`.
-Componentes de terceiros mantêm as próprias licenças: o WinDivert (LGPL-3.0 /
-GPL-2.0) é distribuído sem modificações, e as licenças de todos os
-componentes vão na pasta `licencas\` do pacote.
+### Adding or improving a translation
 
-A licença não tem efeito sobre antivírus. O que reduz os avisos do Windows é
-**assinatura digital**: sem ela, quem baixar o instalador verá o SmartScreen
-("O Windows protegeu o computador" > Mais informações > Executar assim mesmo),
-o que o `LEIA-ME.txt` explica. Na última verificação (definições
-1.463.84.0) o Defender não acusou nada no pacote.
+Messages are written in English in the code (`i18n.T("...")` in Go,
+`data-i18n` and `t("...")` in the web pages); English text is the key. Each
+language is a JSON file in `internal/i18n/locales/<code>.json` mapping the
+English text to its translation, with `{0}`, `{1}` placeholders that may be
+reordered.
 
-## Compilar
+`go test ./internal/i18n` extracts every message from the sources and fails if
+a language misses one, keeps one no longer used, or has different
+placeholders. `I18N_DUMP=missing.json go test ./internal/i18n` writes the
+list of missing messages per language. To add a language, add it to
+`Languages` in `internal/i18n/i18n.go` and create its JSON file.
 
-Precisa de Go 1.26 ou mais novo (o `go` baixa o toolchain sozinho se necessário).
+## License
+
+[MIT](LICENSE). The text appears in the program (Preferences > View license),
+in the installer, in the `.exe` properties and ships in the package as
+`LICENSE.txt`. Third-party components keep their own licenses: WinDivert
+(LGPL-3.0 / GPL-2.0) is distributed unmodified, and the licenses of all
+components ship in the package's `licenses\` folder.
+
+The license has no effect on antivirus products. What reduces Windows warnings
+is a **digital signature**: without it, whoever downloads the installer sees
+SmartScreen ("Windows protected your PC" > More info > Run anyway), which
+`README.txt` in the package explains. At the last check (definitions
+1.463.84.0) Defender reported nothing in the package.
+
+## Building
+
+Needs Go 1.26 or newer (`go` downloads the toolchain by itself if needed).
 
 ```powershell
-.\scripts\build.ps1          # gera vpn_specify.exe e vpn_specify-cli.exe na raiz
-.\scripts\build.ps1 -Test    # roda go vet e os testes antes
-.\scripts\build.ps1 -Dist    # também gera o pacote com o instalador (veja abaixo)
-.\scripts\build.ps1 -Icon    # regenera ícone/versão dos .exe (precisa do windres/MinGW)
-.\scripts\build.ps1 -Linux   # também gera dist\vpn_specify-<versão>-linux-{amd64,arm64}.tar.gz
+.\scripts\build.ps1          # builds vpn_specify.exe and vpn_specify-cli.exe in the root
+.\scripts\build.ps1 -Test    # runs go vet and the tests first
+.\scripts\build.ps1 -Dist    # also builds the package with the installer (see below)
+.\scripts\build.ps1 -Icon    # regenerates the .exe icon/version (needs windres/MinGW)
+.\scripts\build.ps1 -Linux   # also builds dist\vpn_specify-<version>-linux-{amd64,arm64}.tar.gz
 ```
 
-No próprio Linux:
+On Linux itself:
 
 ```sh
-./scripts/build.sh           # gera ./vpn_specify (terminal)
-./scripts/build.sh -test     # roda go vet e os testes antes
-sudo -E go test ./internal/tunnel   # inclui o teste da interface tun (precisa de root)
+./scripts/build.sh           # builds ./vpn_specify
+./scripts/build.sh -test     # runs go vet and the tests first
+sudo -E go test ./internal/tunnel   # includes the tun interface test (needs root)
 ```
 
-O `-Dist` gera `dist\vpn_specify-<versão>-win64.zip`, com:
+`-Dist` builds `dist\vpn_specify-<version>-win64.zip`, with:
 
-- `vpn_specify-setup.exe`: instalador offline; o programa e o WinDivert vão
-  embutidos (`go:embed`, tag de build `installer`);
-- `LEIA-ME.txt`: instalação, requisitos e onde ficam os dados;
-- `licencas\`: licenças dos componentes de terceiros (copiadas dos módulos Go).
+- `vpn_specify-setup.exe`: offline installer; the program and WinDivert are
+  embedded (`go:embed`, `installer` build tag);
+- `README.txt`: installation, requirements and where the data lives;
+- `licenses\`: licenses of the third-party components (copied from the Go
+  modules).
 
-Precisa dos arquivos do WinDivert em `windivert\`. A versão vem do arquivo
-`VERSION`; depois de mudá-la, rode também `-Icon` para atualizar a versão
-mostrada nas propriedades dos `.exe`.
+It needs the WinDivert files in `windivert\`. The version comes from the
+`VERSION` file; after changing it, also run `-Icon` to update the version
+shown in the `.exe` properties.
 
-Ou direto com o `go`:
+Or straight with `go`:
 
 ```powershell
 go build -trimpath -ldflags "-s -w -H=windowsgui" -o vpn_specify.exe ./cmd/vpn_specify      # interface
 go build -trimpath -ldflags "-s -w" -o vpn_specify-cli.exe ./cmd/vpn_specify                # terminal
-go test ./...        # inclui teste ponta a ponta do WireGuard com servidor em memória
+go test ./...        # includes an end-to-end WireGuard test with an in-memory server
 ```
 
-Os executáveis de desenvolvimento ficam na raiz, em modo portátil (com
-`data\` e `windivert\` ao lado).
+Development executables live in the root, in portable mode (with `data\` and
+`windivert\` next to them).
 
-O ícone e as informações de versão ficam nos `rsrc_windows_amd64.syso` de
-`cmd\vpn_specify` e `cmd\installer`, que o `go build` inclui sozinho. A origem
-fica em `assets\` (`icon-source.png`, `vpn_specify.ico` e o modelo
-`resource.rc.tmpl`). Para trocar o ícone, gere de novo o `.ico` e rode
-`.\scripts\build.ps1 -Icon`.
+The icon and version info are in the `rsrc_windows_amd64.syso` files of
+`cmd\vpn_specify` and `cmd\installer`, which `go build` includes by itself.
+Their source is in `assets\` (`icon-source.png`, `vpn_specify.ico` and the
+`resource.rc.tmpl` template). To change the icon, regenerate the `.ico` and
+run `.\scripts\build.ps1 -Icon`.
 
-## Estrutura do projeto
+### Publishing a version
+
+1. Change `VERSION` (e.g. `1.1.0`) and run `.\scripts\build.ps1 -Test -Icon -Dist -Linux`.
+2. Create the release with the tag **`v1.1.0`** (not marked as pre-release)
+   and attach the files from `dist\` **with these names**, which the updater
+   looks for:
+   - `vpn_specify-1.1.0-win64.zip`
+   - `vpn_specify-1.1.0-linux-amd64.tar.gz`
+   - `vpn_specify-1.1.0-linux-arm64.tar.gz`
+
+   A system without a package in the release simply gets no notice. That is
+   why `v1.0.0`, which only has the Windows package, does not show up for
+   Linux users.
+3. The release text shows up in **What's new**.
+
+## Project structure
 
 ```
-cmd/vpn_specify/        ponto de entrada: interface gráfica, up/run/status e uninstall
-cmd/installer/          instalador (vpn_specify-setup.exe)
+cmd/vpn_specify/        entry point: GUI, up/run/status/update, autostart and uninstall
+cmd/installer/          installer (vpn_specify-setup.exe)
 internal/
-  tunnel/               conexão VPN: WireGuard (em processo), OpenVPN, DNS
-  proxy/                proxies locais SOCKS5 (TCP/UDP) e HTTP, encaminhamento -L
-  capture/              captura por processo com WinDivert (TCP e UDP)
-  engine/               junta túnel + proxies + captura numa conexão com estado
-  store/                pasta de dados: VPNs importadas, apps, preferências
-  paths/                onde fica a pasta de dados (instalado ou portátil)
-  control/              API local entre instâncias (atalhos sem novo UAC)
-  launcher/             abre apps configurados para usar o proxy
-  netcheck/             verificação do IP público (TCP e UDP)
-  update/               busca, download (com SHA-256) e instalação de versões novas do GitHub
-  autostart/            inicializar com o sistema: tarefa agendada (Windows) ou XDG autostart (Linux)
-  gui/                  interface e agente: WebView2 (Windows) ou página local + janela de app (Linux); página em gui/web/
-  platform/             APIs do sistema: UAC, DPAPI, atalhos, Job Object (Windows); sudo, Pdeathsig (Linux)
-  setup/                instalar/desinstalar; tela em setup/web/
-  brand/                logotipo usado pelo app e pelo instalador
-  version/              versão (definida no build a partir de VERSION)
-  textutil/             utilitários de texto
-license.go, LICENSE     licença MIT (embutida nos executáveis)
-assets/                 ícone, modelo dos recursos (.rc) e LEIA-ME do pacote
-scripts/                build.ps1 (Windows) e build.sh (Linux)
-dist/                   pacotes gerados pelo -Dist e pelo -Linux (não versionado)
-windivert/              driver WinDivert (baixado à parte, não versionado)
-data/                   dados do usuário, criado em tempo de execução (não versionado)
+  tunnel/               VPN connection: WireGuard (in process), OpenVPN, DNS
+  proxy/                local SOCKS5 (TCP/UDP) and HTTP proxies, -L forwarding
+  capture/              per-process capture with WinDivert (TCP and UDP)
+  engine/               tunnel + proxies + capture in one connection with state
+  store/                data folder: imported VPNs, apps, preferences
+  paths/                where the data folder is (installed or portable)
+  control/              local API between instances (shortcuts without a new UAC)
+  launcher/             opens apps configured to use the proxy
+  netcheck/             public IP check (TCP and UDP)
+  update/               finds, downloads (with SHA-256) and installs new versions from GitHub
+  autostart/            start with the system: scheduled task (Windows) or XDG autostart (Linux)
+  i18n/                 translations (locales/*.json) and language detection
+  gui/                  interface and agent: WebView2 (Windows) or local page + app window (Linux); page in gui/web/
+  platform/             system APIs: UAC, DPAPI, shortcuts, Job Object (Windows); sudo, Pdeathsig (Linux)
+  setup/                install/uninstall; window in setup/web/
+  brand/                logo used by the app and the installer
+  version/              version (set at build time from VERSION)
+  textutil/             text helpers
+docs/                   this README in other languages
+license.go, LICENSE     MIT license (embedded in the executables)
+assets/                 icon, resource (.rc) template and the package README
+scripts/                build.ps1 (Windows) and build.sh (Linux)
+dist/                   packages built by -Dist and -Linux (not versioned)
+windivert/              WinDivert driver (downloaded separately, not versioned)
+data/                   user data, created at run time (not versioned)
 ```
 
-Dependências entre pacotes: `cmd → gui → engine → (tunnel, proxy, capture)`;
-`store`, `control`, `launcher`, `netcheck` e `platform` são usados por cima.
-O instalador usa só `setup`, `platform`, `paths`, `brand` e `version` (não
-carrega o código de VPN).
+Package dependencies: `cmd → gui → engine → (tunnel, proxy, capture)`;
+`store`, `control`, `launcher`, `netcheck`, `i18n` and `platform` are used on
+top. The installer only uses `setup`, `platform`, `paths`, `i18n`, `brand`
+and `version` (it does not load the VPN code).

@@ -7,9 +7,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"vpn_specify/internal/i18n"
 )
 
-// FetchIP busca o IP público num serviço HTTP (direto ou por um proxy).
+// FetchIP gets the public IP from an HTTP service (directly or via a proxy).
 func FetchIP(u string, proxy *url.URL) (string, error) {
 	tr := &http.Transport{Proxy: nil}
 	if proxy != nil {
@@ -31,10 +33,10 @@ func FetchIP(u string, proxy *url.URL) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// Describe formata o resultado de uma verificação para exibir.
+// Describe formats a check result for display.
 func Describe(s string, err error) string {
 	if err != nil {
-		return "erro (" + err.Error() + ")"
+		return i18n.T("error ({0})", err)
 	}
 	return s
 }

@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>vpn_specify</title>
 <script>window.VS_PLATFORM = "{{PLATFORM}}";</script>
+<script>{{I18N_SCRIPT}}</script>
 <!--{{BRIDGE}}-->
 <link rel="icon" href="{{LOGO}}">
 <style>
@@ -27,7 +28,7 @@ header .logo { width: 28px; height: 28px; margin-right: -4px; }
 header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
 .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 99px; background: var(--chip); font-size: 13px; font-weight: 550; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.pill.conectado .dot { background: var(--ok); } .pill.conectando .dot { background: var(--warn); animation: pulse 1s infinite; } .pill.erro .dot { background: var(--err); }
+.pill.connected .dot { background: var(--ok); } .pill.connecting .dot { background: var(--warn); animation: pulse 1s infinite; } .pill.error .dot { background: var(--err); }
 @keyframes pulse { 50% { opacity: .3; } }
 .spacer { flex: 1; }
 main { max-width: 1040px; margin: 0 auto; padding: 18px 20px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
@@ -46,6 +47,8 @@ select, input[type=text], input[type=password] { font: inherit; color: var(--tex
 label.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 label.check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .row { display: flex; gap: 10px; align-items: center; }
+.row > button { flex: none; white-space: nowrap; }   /* CJK text would wrap letter by letter */
+.row > select, .row > input { flex: 1; min-width: 0; }
 .list { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .item { background: var(--card); padding: 10px 12px; display: flex; gap: 12px; align-items: center; }
 .item .grow { flex: 1; min-width: 0; }
@@ -82,7 +85,6 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .item.pick { cursor: pointer; } .item.pick:hover { background: var(--chip); }
 #pickList { max-height: 52vh; overflow: auto; }
 input[type=search] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; width: 100%; }
-body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu de aplicativos."; position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; background: rgba(0,0,0,.65); color: #fff; font-size: 16px; z-index: 100; }
 .card.update { border-color: var(--accent); }
 .card.update .row { flex-wrap: wrap; }
 .card.update .grow { flex: 1; min-width: 220px; }
@@ -91,15 +93,19 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
 .card.update .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .bar { height: 6px; background: var(--chip); border-radius: 99px; margin-top: 10px; overflow: hidden; }
 .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.platform-linux .win-only, .platform-windows .linux-only { display: none !important; }
+body.gone::after { content: attr(data-gone-text); position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; background: rgba(0,0,0,.65); color: #fff; font-size: 16px; z-index: 100; }
+[dir=rtl] .seg label, [dir=rtl] .item { text-align: right; }
+pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
 </style>
 </head>
-<body>
+<body class="platform-{{PLATFORM}}">
 <header>
   <img class="logo" src="{{LOGO}}" alt="">
   <h1>vpn_specify</h1>
-  <span id="pill" class="pill"><span class="dot"></span><span id="pillText">Desconectado</span></span>
+  <span id="pill" class="pill"><span class="dot"></span><span id="pillText"></span></span>
   <span class="spacer"></span>
-  <button onclick="vsOpenDataDir()">Pasta de dados</button>
+  <button onclick="vsOpenDataDir()" data-i18n>Data folder</button>
 </header>
 
 <main>
@@ -111,57 +117,63 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
         <div class="bar" id="updBar" hidden><span id="updFill"></span></div>
       </div>
       <div class="actions" id="updActions">
-        <button class="small" onclick="showNotes()">Novidades</button>
-        <button class="small" onclick="call(vsUpdateDismiss(true))">Ignorar esta versão</button>
-        <button class="small" onclick="call(vsUpdateDismiss(false))">Agora não</button>
-        <button class="small primary" onclick="installUpdate()">Atualizar</button>
+        <button class="small" onclick="showNotes()" data-i18n>What's new</button>
+        <button class="small" onclick="call(vsUpdateDismiss(true))" data-i18n>Skip this version</button>
+        <button class="small" onclick="call(vsUpdateDismiss(false))" data-i18n>Not now</button>
+        <button class="small primary" onclick="installUpdate()" data-i18n>Update</button>
       </div>
     </div>
   </section>
 
   <section class="card">
-    <h2>Conexão</h2>
+    <h2><span data-i18n>Connection</span></h2>
     <div class="row">
       <select id="connSelect"></select>
-      <button id="connBtn" class="primary" onclick="toggleConn()">Conectar</button>
+      <button id="connBtn" class="primary" onclick="toggleConn()"></button>
     </div>
     <dl class="kv" id="connInfo"></dl>
-    <p class="hint">Só os apps abertos pelo vpn_specify usam a VPN. O resto do computador continua na rede normal.</p>
+    <p class="hint" data-i18n>Only the apps opened by vpn_specify use the VPN. The rest of the computer stays on the normal network.</p>
     <div class="row" style="margin-top:10px">
-      <button class="small" id="ipBtn" onclick="checkIP()" disabled>Testar IP</button>
+      <button class="small" id="ipBtn" onclick="checkIP()" disabled data-i18n>Test IP</button>
       <span id="ipOut" class="sub" style="color:var(--muted);font-size:12.5px"></span>
     </div>
   </section>
 
   <section class="card">
-    <h2>VPNs <span class="spacer"></span><button class="small primary" onclick="importConfig()">Importar arquivo…</button></h2>
+    <h2><span data-i18n>VPNs</span> <span class="spacer"></span><button class="small primary" onclick="importConfig()" data-i18n>Import file…</button></h2>
     <div id="configs" class="list"></div>
-    <p class="hint">Os arquivos (.ovpn / .conf) são copiados para a pasta de dados do vpn_specify. Use “Editar” para renomear ou alterar a configuração.</p>
+    <p class="hint" data-i18n>The files (.ovpn / .conf) are copied into the vpn_specify data folder. Use “Edit” to rename or change the configuration.</p>
   </section>
 
   <section class="card wide">
-    <h2>Apps na VPN <span class="spacer"></span><button class="small primary" onclick="addApp()">Adicionar app…</button></h2>
+    <h2><span data-i18n>Apps in the VPN</span> <span class="spacer"></span><button class="small primary" onclick="addApp()" data-i18n>Add app…</button></h2>
     <div id="apps" class="list"></div>
-    <p class="hint" id="appsHint">Use “Criar atalho” para ter, por exemplo, “DiscordVPN” na pesquisa do Windows ao lado do Discord original.</p>
+    <p class="hint win-only" data-i18n>Use “Create shortcut” to get, for example, “DiscordVPN” in Windows search next to the original Discord.</p>
+    <p class="hint linux-only" data-i18n>Use “Create shortcut” to get, for example, “DiscordVPN” in the applications menu next to the original Discord.</p>
   </section>
 
   <section class="card wide">
-    <h2>Preferências</h2>
+    <h2><span data-i18n>Preferences</span></h2>
     <div style="display:grid;gap:10px">
+      <label class="field" style="max-width:320px"><span data-i18n>Language</span>
+        <select id="langSel" onchange="changeLanguage(this.value)"></select></label>
       <label class="check"><input type="checkbox" id="autoDisc" onchange="vsSetAutoDisconnect(this.checked)">
-        Desconectar a VPN quando os apps abertos por ela forem fechados (com esta janela fechada)</label>
+        <span data-i18n>Disconnect the VPN when the apps opened through it are closed (with this window closed)</span></label>
       <label class="check"><input type="checkbox" id="updCheck" onchange="vsSetUpdateCheck(this.checked)">
-        Procurar atualizações ao abrir o vpn_specify</label>
-      <div class="row"><button class="small" id="mainScBtn" onclick="mainShortcut()">Adicionar “vpn_specify” ao Menu Iniciar</button></div>
+        <span data-i18n>Check for updates when vpn_specify starts</span></label>
+      <div class="row">
+        <button class="small win-only" onclick="mainShortcut()" data-i18n>Add “vpn_specify” to the Start menu</button>
+        <button class="small linux-only" onclick="mainShortcut()" data-i18n>Add “vpn_specify” to the applications menu</button>
+      </div>
       <div class="row about"><span id="aboutText">vpn_specify</span><span class="spacer"></span>
-        <button class="small" onclick="checkUpdates()">Procurar atualizações</button>
-        <button class="small" onclick="showLicense()">Ver licença</button></div>
+        <button class="small" onclick="checkUpdates()" data-i18n>Check for updates</button>
+        <button class="small" onclick="showLicense()" data-i18n>View license</button></div>
     </div>
   </section>
 
   <section class="card wide">
     <details id="logBox">
-      <summary>Log</summary>
+      <summary data-i18n>Log</summary>
       <pre id="log" style="margin-top:10px"></pre>
     </details>
   </section>
@@ -169,40 +181,45 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
 
 <dialog id="appDlg">
   <form method="dialog" onsubmit="return false">
-    <h3 id="appDlgTitle">Adicionar app</h3>
-    <label class="field">Nome<input type="text" id="aName"></label>
-    <label class="field">Programa
-      <div class="row"><input type="text" id="aPath" readonly><button type="button" onclick="pickApp()">Escolher…</button></div>
+    <h3 id="appDlgTitle"></h3>
+    <label class="field"><span data-i18n>Name</span><input type="text" id="aName"></label>
+    <label class="field"><span data-i18n>Program</span>
+      <div class="row"><input type="text" id="aPath" data-i18n-attr="placeholder" placeholder="/usr/bin/program"><button type="button" onclick="pickApp()" data-i18n>Choose…</button></div>
     </label>
-    <label class="field">Argumentos<input type="text" id="aArgs"></label>
-    <label class="field">VPN<select id="aConfig"></select></label>
+    <label class="field"><span data-i18n>Arguments</span><input type="text" id="aArgs"></label>
+    <label class="field"><span data-i18n>VPN</span><select id="aConfig"></select></label>
     <div class="seg">
-      <label id="modeCaptureOpt"><input type="radio" name="aMode" value="capture" checked onchange="modeChanged()">
-        <span><b>Captura completa</b> (recomendado)<small>Todo o tráfego do app, incluindo UDP e voz (Discord, jogos). Usa o driver WinDivert.</small></span></label>
+      <label class="win-only"><input type="radio" name="aMode" value="capture" checked onchange="modeChanged()">
+        <span><b data-i18n>Full capture</b> <span data-i18n>(recommended)</span><small data-i18n>All the app's traffic, including UDP and voice (Discord, games). Uses the WinDivert driver.</small></span></label>
       <label><input type="radio" name="aMode" value="proxy" onchange="modeChanged()">
-        <span><b>Proxy</b><small id="proxyDesc">Só TCP, para navegadores e apps Chromium/Electron. Não precisa de driver.</small></span></label>
+        <span><b data-i18n>Proxy</b>
+          <small class="win-only" data-i18n>TCP only, for browsers and Chromium/Electron apps. No driver needed.</small>
+          <small class="linux-only" data-i18n>Through the local proxy: browsers, Chromium/Electron apps (Discord, Slack, VS Code…) and programs that honor HTTP_PROXY. Full capture (UDP and voice) only exists on Windows.</small></span></label>
     </div>
-    <label class="field" id="aCaptureField">Processos capturados (separados por vírgula)<input type="text" id="aCapture" placeholder="discord.exe"></label>
+    <label class="field" id="aCaptureField"><span data-i18n>Captured processes (comma-separated)</span><input type="text" id="aCapture" placeholder="discord.exe"></label>
     <div>
-      <label class="check"><input type="checkbox" id="aAutostart"> <span id="aAutostartText">Abrir junto com o Windows (ao entrar na sua conta)</span></label>
-      <p class="hint" id="aAutostartHint" style="margin:4px 0 0 26px">O vpn_specify conecta a VPN e abre o app logo depois do logon, sem pedir o UAC. Os apps marcados precisam usar a mesma VPN.</p>
+      <label class="check"><input type="checkbox" id="aAutostart">
+        <span class="win-only" data-i18n>Open with Windows (when you sign in)</span>
+        <span class="linux-only" data-i18n>Open with the system (when you log in)</span></label>
+      <p class="hint win-only" style="margin:4px 0 0 26px" data-i18n>vpn_specify connects the VPN and opens the app right after you sign in, without a UAC prompt. The marked apps must use the same VPN.</p>
+      <p class="hint linux-only" style="margin:4px 0 0 26px" data-i18n>vpn_specify connects the VPN and opens the app right after you log in (OpenVPN VPNs ask for the administrator password at that moment). The marked apps must use the same VPN.</p>
     </div>
     <div class="buttons">
-      <button type="button" onclick="appDlg.close()">Cancelar</button>
-      <button type="button" class="primary" onclick="saveApp()">Salvar</button>
+      <button type="button" onclick="appDlg.close()" data-i18n>Cancel</button>
+      <button type="button" class="primary" onclick="saveApp()" data-i18n>Save</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="pickDlg" class="wide">
   <form method="dialog" onsubmit="return false">
-    <h3>Escolher app</h3>
-    <input type="search" id="pickSearch" placeholder="Pesquisar apps instalados…" oninput="renderPick()" autocomplete="off">
+    <h3 data-i18n>Choose app</h3>
+    <input type="search" id="pickSearch" data-i18n-attr="placeholder" placeholder="Search installed apps…" oninput="renderPick()" autocomplete="off">
     <div id="pickList" class="list"></div>
     <div class="buttons">
-      <button type="button" onclick="pickFromFile()">Escolher arquivo…</button>
+      <button type="button" onclick="pickFromFile()" data-i18n>Choose file…</button>
       <span class="spacer"></span>
-      <button type="button" onclick="pickDlg.close()">Cancelar</button>
+      <button type="button" onclick="pickDlg.close()" data-i18n>Cancel</button>
     </div>
   </form>
 </dialog>
@@ -210,61 +227,64 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
 
 <dialog id="scDlg">
   <form method="dialog" onsubmit="return false">
-    <h3>Criar atalho</h3>
-    <label class="field"><span id="scNameLabel">Nome do atalho (aparece na pesquisa do Windows)</span><input type="text" id="scName"></label>
-    <label class="check"><input type="checkbox" id="scDesktop"> Criar também na Área de Trabalho</label>
-    <p class="hint" style="margin:0" id="scHint">Ao abrir o atalho, o vpn_specify conecta a VPN (pedindo permissão de Administrador se ainda não estiver conectado) e abre o app dentro dela.</p>
+    <h3 data-i18n>Create shortcut</h3>
+    <label class="field"><span class="win-only" data-i18n>Shortcut name (shows up in Windows search)</span>
+      <span class="linux-only" data-i18n>Shortcut name (shows up in the applications menu)</span><input type="text" id="scName"></label>
+    <label class="check"><input type="checkbox" id="scDesktop"> <span data-i18n>Also create it on the desktop</span></label>
+    <p class="hint win-only" style="margin:0" data-i18n>When the shortcut is opened, vpn_specify connects the VPN (asking for Administrator permission if it is not connected yet) and opens the app inside it.</p>
+    <p class="hint linux-only" style="margin:0" data-i18n>When the shortcut is opened, vpn_specify connects the VPN and opens the app inside it. OpenVPN VPNs ask for the administrator password when connecting.</p>
     <div class="buttons">
-      <button type="button" onclick="scDlg.close()">Cancelar</button>
-      <button type="button" class="primary" onclick="createShortcut()">Criar atalho</button>
+      <button type="button" onclick="scDlg.close()" data-i18n>Cancel</button>
+      <button type="button" class="primary" onclick="createShortcut()" data-i18n>Create shortcut</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="credDlg">
   <form method="dialog" onsubmit="return false">
-    <h3 id="credTitle">Credenciais</h3>
-    <label class="field">Usuário<input type="text" id="cUser" autocomplete="off"></label>
-    <label class="field">Senha<input type="password" id="cPass" autocomplete="off" placeholder="(deixe vazio para manter a atual)"></label>
-    <p class="hint" style="margin:0" id="credHint">A senha é guardada protegida pelo Windows (DPAPI): só a sua conta deste PC consegue ler.</p>
+    <h3 id="credTitle"></h3>
+    <label class="field"><span data-i18n>User</span><input type="text" id="cUser" autocomplete="off"></label>
+    <label class="field"><span data-i18n>Password</span><input type="password" id="cPass" autocomplete="off" data-i18n-attr="placeholder" placeholder="(leave empty to keep the current one)"></label>
+    <p class="hint win-only" style="margin:0" data-i18n>The password is stored protected by Windows (DPAPI): only your account on this PC can read it.</p>
+    <p class="hint linux-only" style="margin:0" data-i18n>The password is stored encrypted; the key is in ~/.local/share/vpn_specify, readable only by your account.</p>
     <div class="buttons">
-      <button type="button" onclick="credDlg.close()">Cancelar</button>
-      <button type="button" class="primary" onclick="saveCred()">Salvar</button>
+      <button type="button" onclick="credDlg.close()" data-i18n>Cancel</button>
+      <button type="button" class="primary" onclick="saveCred()" data-i18n>Save</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="cfgDlg" class="wide">
   <form method="dialog" onsubmit="return false">
-    <h3>Editar VPN</h3>
-    <label class="field">Nome<input type="text" id="eName" autocomplete="off"></label>
-    <label class="field">Configuração <span id="eInfo" style="font-size:12px"></span>
+    <h3 data-i18n>Edit VPN</h3>
+    <label class="field"><span data-i18n>Name</span><input type="text" id="eName" autocomplete="off"></label>
+    <label class="field"><span><span data-i18n>Configuration</span> <span id="eInfo" style="font-size:12px"></span></span>
       <textarea id="eText" spellcheck="false" wrap="off"></textarea></label>
-    <p class="hint" style="margin:0">Renomear atualiza os apps que usam esta VPN. Os atalhos já criados continuam funcionando.</p>
+    <p class="hint" style="margin:0" data-i18n>Renaming updates the apps that use this VPN. Shortcuts already created keep working.</p>
     <div class="buttons">
-      <button type="button" onclick="cfgDlg.close()">Cancelar</button>
-      <button type="button" class="primary" onclick="saveCfgEdit()">Salvar</button>
+      <button type="button" onclick="cfgDlg.close()" data-i18n>Cancel</button>
+      <button type="button" class="primary" onclick="saveCfgEdit()" data-i18n>Save</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="notesDlg" class="wide">
   <form method="dialog" onsubmit="return false">
-    <h3 id="notesTitle">Novidades</h3>
+    <h3 id="notesTitle"></h3>
     <pre id="notesText" class="license"></pre>
     <div class="buttons">
-      <button type="button" onclick="call(vsOpenReleasePage())">Ver no GitHub</button>
+      <button type="button" onclick="call(vsOpenReleasePage())" data-i18n>View on GitHub</button>
       <span class="spacer"></span>
-      <button type="button" class="primary" onclick="notesDlg.close()">Fechar</button>
+      <button type="button" class="primary" onclick="notesDlg.close()" data-i18n>Close</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="licDlg" class="wide">
   <form method="dialog" onsubmit="return false">
-    <h3>Licença</h3>
+    <h3 data-i18n>License</h3>
     <pre id="licText" class="license"></pre>
-    <div class="buttons"><button type="button" class="primary" onclick="licDlg.close()">Fechar</button></div>
+    <div class="buttons"><button type="button" class="primary" onclick="licDlg.close()" data-i18n>Close</button></div>
   </form>
 </dialog>
 
@@ -277,19 +297,38 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 let state = null, lastConfigs = "", lastApps = "", logNext = 0, editing = null, scApp = null, credCfg = null, cfgEditing = null;
 
 function toast(msg, kind) {
-  const t = document.createElement("div");
-  t.className = "toast " + (kind || "");
-  t.textContent = msg;
-  $("toasts").appendChild(t);
-  setTimeout(() => t.remove(), kind === "error" ? 9000 : 4500);
+  const el = document.createElement("div");
+  el.className = "toast " + (kind || "");
+  el.textContent = msg;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), kind === "error" ? 9000 : 4500);
 }
 async function call(p, okMsg) {
   try { const r = await p; if (okMsg) toast(okMsg, "ok"); refresh(); return r; }
   catch (e) { toast(String(e), "error"); throw e; }
 }
 
-const stateNames = { desconectado: "Desconectado", conectando: "Conectando…", conectado: "Conectado", erro: "Erro" };
+// ---------- language ----------
+function stateName(s) {
+  return { disconnected: t("Disconnected"), connecting: t("Connecting…"), connected: t("Connected"), error: t("Error") }[s] || s;
+}
+// renderTexts fills in the texts built by the script (the static ones are
+// translated by applyI18n through data-i18n).
+function renderTexts() {
+  document.body.dataset.goneText = LINUX ? t("vpn_specify was closed. Open it again from the applications menu.")
+    : t("vpn_specify was closed. Open it again from the Start menu.");
+  $("langSel").innerHTML = I18N_LANGUAGES.map(l => `<option value="${esc(l.code)}">${esc(l.name)}</option>`).join("");
+  $("langSel").value = I18N_LANG;
+  if (about) $("aboutText").textContent = t("vpn_specify {0} · Free software under the MIT license", about.version);
+  lastConfigs = ""; lastApps = "";
+  if (state) refresh();
+}
+async function changeLanguage(code) {
+  try { setI18n(await vsSetLanguage(code)); } catch (e) { toast(String(e), "error"); return; }
+  renderTexts();
+}
 
+// ---------- state ----------
 async function refresh() {
   try { state = await vsState(); } catch (e) { return; }
   const st = state.status, s = state.settings;
@@ -297,21 +336,21 @@ async function refresh() {
   if (state.notice) toast(state.notice, "error");
 
   $("pill").className = "pill " + st.state;
-  $("pillText").textContent = stateNames[st.state] + (st.config && st.state !== "desconectado" ? " · " + st.config : "");
-  const active = st.state === "conectado" || st.state === "conectando";
-  $("connBtn").textContent = active ? "Desconectar" : "Conectar";
+  $("pillText").textContent = stateName(st.state) + (st.config && st.state !== "disconnected" ? " · " + st.config : "");
+  const active = st.state === "connected" || st.state === "connecting";
+  $("connBtn").textContent = active ? t("Disconnect") : t("Connect");
   $("connBtn").className = active ? "" : "primary";
   $("connBtn").disabled = !active && s.configs.length === 0;
   $("connSelect").disabled = active;
-  $("ipBtn").disabled = st.state !== "conectado";
+  $("ipBtn").disabled = st.state !== "connected";
 
   let info = "";
-  if (st.state === "conectado") {
-    info += `<dt>Desde</dt><dd>${new Date(st.since * 1000).toLocaleTimeString()}</dd>`;
-    if (!LINUX) info += `<dt>Captura</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : "nenhum app capturado"}</dd>`;
-    info += `<dt>Proxy</dt><dd>SOCKS5 ${esc(st.socks)} · HTTP ${esc(st.http)}</dd>`;
+  if (st.state === "connected") {
+    info += `<dt>${esc(t("Since"))}</dt><dd>${new Date(st.since * 1000).toLocaleTimeString(I18N_LANG)}</dd>`;
+    if (!LINUX) info += `<dt>${esc(t("Capture"))}</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : esc(t("no app captured"))}</dd>`;
+    info += `<dt>${esc(t("Proxy"))}</dt><dd>SOCKS5 ${esc(st.socks)} · HTTP ${esc(st.http)}</dd>`;
   }
-  if (st.state === "erro") info += `<dt>Erro</dt><dd class="err">${esc(st.error)}</dd>`;
+  if (st.state === "error") info += `<dt>${esc(t("Error"))}</dt><dd class="err">${esc(st.error)}</dd>`;
   $("connInfo").innerHTML = info;
   $("autoDisc").checked = s.autoDisconnect;
   $("updCheck").checked = !s.noUpdateCheck;
@@ -321,21 +360,21 @@ async function refresh() {
   if (cfgKey !== lastConfigs) {
     lastConfigs = cfgKey;
     const sel = $("connSelect"), cur = sel.value || (st.config || "");
-    sel.innerHTML = s.configs.map(c => `<option>${esc(c.name)}</option>`).join("") || `<option value="">importe uma VPN</option>`;
+    sel.innerHTML = s.configs.map(c => `<option>${esc(c.name)}</option>`).join("") || `<option value="">${esc(t("import a VPN"))}</option>`;
     if (s.configs.some(c => c.name === cur)) sel.value = cur;
     $("configs").innerHTML = s.configs.length ? s.configs.map(c => `
       <div class="item">
         <div class="grow"><div class="title">${esc(c.name)}<span class="badge">${c.kind === "wireguard" ? "WireGuard" : "OpenVPN"}</span>
-          ${c.needAuth ? `<span class="badge ${c.user ? "" : "warn"}">${c.user ? "login: " + esc(c.user) : "precisa de login"}</span>` : ""}</div>
+          ${c.needAuth ? `<span class="badge ${c.user ? "" : "warn"}">${c.user ? esc(t("login: {0}", c.user)) : esc(t("needs login"))}</span>` : ""}</div>
           <div class="sub">${esc(c.file)}</div></div>
         <div class="actions">
-          <button class="small" onclick='openCfgEdit(${JSON.stringify(c.name)})'>Editar</button>
-          ${c.kind === "openvpn" ? `<button class="small" onclick='openCred(${JSON.stringify(c.name)})'>Credenciais</button>` : ""}
-          <button class="small danger" onclick='removeConfig(${JSON.stringify(c.name)})'>Remover</button>
+          <button class="small" onclick='openCfgEdit(${JSON.stringify(c.name)})'>${esc(t("Edit"))}</button>
+          ${c.kind === "openvpn" ? `<button class="small" onclick='openCred(${JSON.stringify(c.name)})'>${esc(t("Credentials"))}</button>` : ""}
+          <button class="small danger" onclick='removeConfig(${JSON.stringify(c.name)})'>${esc(t("Remove"))}</button>
         </div>
-      </div>`).join("") : `<div class="item empty">Nenhuma VPN ainda. Clique em “Importar arquivo…”.</div>`;
+      </div>`).join("") : `<div class="item empty">${esc(t("No VPN yet. Click “Import file…”."))}</div>`;
   }
-  if (st.state !== "desconectado" && st.state !== "erro" && st.config) $("connSelect").value = st.config;
+  if (st.state !== "disconnected" && st.state !== "error" && st.config) $("connSelect").value = st.config;
 
   const appKey = JSON.stringify(s.apps);
   if (appKey !== lastApps) {
@@ -343,20 +382,24 @@ async function refresh() {
     $("apps").innerHTML = s.apps.length ? s.apps.map(a => `
       <div class="item">
         <div class="avatar">${esc((a.name[0] || "?").toUpperCase())}</div>
-        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !LINUX ? "captura completa" : "proxy"}</span><span class="badge">${esc(a.config)}</span>${a.autostart ? `<span class="badge">inicia com o sistema</span>` : ""}</div>
+        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !LINUX ? esc(t("full capture")) : esc(t("proxy"))}</span><span class="badge">${esc(a.config)}</span>${a.autostart ? `<span class="badge">${esc(t("starts with the system"))}</span>` : ""}</div>
           <div class="sub">${esc(a.path)} ${esc(a.args)}</div>
-          ${a.shortcut ? `<div class="sub">Atalho: ${esc(shortcutName(a.shortcut))}</div>` : ""}</div>
+          ${a.shortcut ? `<div class="sub">${esc(t("Shortcut: {0}", shortcutName(a.shortcut)))}</div>` : ""}</div>
         <div class="actions">
-          <button class="small primary" onclick='call(vsLaunchApp(${JSON.stringify(a.id)}), "Abrindo ${esc(a.name)} na VPN…")'>Abrir na VPN</button>
-          <button class="small" onclick='openShortcut(${JSON.stringify(a.id)})'>Criar atalho</button>
-          <button class="small" onclick='editApp(${JSON.stringify(a.id)})'>Editar</button>
-          <button class="small danger" onclick='removeApp(${JSON.stringify(a.id)})'>Remover</button>
+          <button class="small primary" onclick='launchApp(${JSON.stringify(a.id)})'>${esc(t("Open in VPN"))}</button>
+          <button class="small" onclick='openShortcut(${JSON.stringify(a.id)})'>${esc(t("Create shortcut"))}</button>
+          <button class="small" onclick='editApp(${JSON.stringify(a.id)})'>${esc(t("Edit"))}</button>
+          <button class="small danger" onclick='removeApp(${JSON.stringify(a.id)})'>${esc(t("Remove"))}</button>
         </div>
-      </div>`).join("") : `<div class="item empty">Nenhum app. Clique em “Adicionar app…” e escolha, por exemplo, o atalho do Discord.</div>`;
+      </div>`).join("") : `<div class="item empty">${esc(t("No apps. Click “Add app…” and choose, for example, the Discord shortcut."))}</div>`;
   }
 }
+function launchApp(id) {
+  const a = state.settings.apps.find(a => a.id === id);
+  call(vsLaunchApp(id), t("Opening {0} in the VPN…", a ? a.name : ""));
+}
 
-// ---------- atualizações ----------
+// ---------- updates ----------
 function renderUpdate(u) {
   const box = $("updBox");
   const busy = !!u && (u.state === "downloading" || u.state === "installing");
@@ -367,39 +410,42 @@ function renderUpdate(u) {
   $("updBar").hidden = !busy;
   $("updSub").classList.toggle("err", u.state === "error");
   if (u.state === "downloading") {
-    $("updTitle").textContent = `Baixando o vpn_specify ${u.version}…`;
+    $("updTitle").textContent = t("Downloading vpn_specify {0}…", u.version);
     $("updSub").textContent = `${Math.round(u.progress * 100)}%`;
     $("updFill").style.width = (u.progress * 100) + "%";
   } else if (u.state === "installing") {
-    $("updTitle").textContent = `Instalando o vpn_specify ${u.version}…`;
-    $("updSub").textContent = "O vpn_specify vai fechar e abrir de novo já na versão nova.";
+    $("updTitle").textContent = t("Installing vpn_specify {0}…", u.version);
+    $("updSub").textContent = t("vpn_specify will close and open again already on the new version.");
     $("updFill").style.width = "100%";
   } else if (u.state === "error") {
-    $("updTitle").textContent = `Não consegui atualizar para a versão ${u.version}`;
+    $("updTitle").textContent = t("Could not update to version {0}", u.version);
     $("updSub").textContent = u.error;
   } else {
-    $("updTitle").textContent = `Nova versão disponível: ${u.version}`;
-    $("updSub").textContent = `Você está usando a versão ${u.current}.`;
+    $("updTitle").textContent = t("New version available: {0}", u.version);
+    $("updSub").textContent = t("You are using version {0}.", u.current);
   }
 }
 function installUpdate() {
   const u = state.update, st = state.status;
-  const active = st.state === "conectado" || st.state === "conectando";
-  if (!confirm(`Atualizar para a versão ${u.version}?\n\nO vpn_specify vai baixar a atualização, fechar` +
-      (active ? " (desconectando a VPN e os apps abertos por ela)" : "") + ", instalar e abrir de novo.")) return;
+  const active = st.state === "connected" || st.state === "connecting";
+  const msg = active
+    ? t("Update to version {0}?\n\nvpn_specify will download the update, close (disconnecting the VPN and the apps opened through it), install it and open again.", u.version)
+    : t("Update to version {0}?\n\nvpn_specify will download the update, close, install it and open again.", u.version);
+  if (!confirm(msg)) return;
   call(vsUpdateInstall());
 }
 async function checkUpdates() {
   const v = await call(vsUpdateCheck());
-  if (!v) toast(`Você já está na versão mais recente${about ? " (" + about.version + ")" : ""}.`, "ok");
+  if (!v) toast(t("You already have the latest version ({0}).", about ? about.version : ""), "ok");
 }
 function showNotes() {
   const u = state.update;
-  $("notesTitle").textContent = `Novidades da versão ${u.version}`;
-  $("notesText").textContent = (u.notes || "").trim() || "(a versão não tem descrição)";
+  $("notesTitle").textContent = t("What's new in version {0}", u.version);
+  $("notesText").textContent = (u.notes || "").trim() || t("(this version has no description)");
   notesDlg.showModal();
 }
 
+// ---------- log ----------
 async function refreshLog() {
   try {
     const r = await vsLog(logNext);
@@ -413,15 +459,16 @@ async function refreshLog() {
   } catch (e) {}
 }
 
+// ---------- connection and VPNs ----------
 function toggleConn() {
   const st = state.status;
-  if (st.state === "conectado" || st.state === "conectando") call(vsDisconnect());
+  if (st.state === "connected" || st.state === "connecting") call(vsDisconnect());
   else if ($("connSelect").value) call(vsConnect($("connSelect").value));
 }
 async function checkIP() {
-  $("ipOut").textContent = "testando…";
+  $("ipOut").textContent = t("testing…");
   const r = await vsCheckIP();
-  $("ipOut").textContent = `direto ${r.direct} · VPN (TCP) ${r.vpn} · VPN (UDP) ${r.vpnUdp}`;
+  $("ipOut").textContent = t("direct {0} · VPN (TCP) {1} · VPN (UDP) {2}", r.direct, r.vpn, r.vpnUdp);
 }
 function shortcutName(p) {
   const n = p.split(/[\\/]/).pop();
@@ -430,11 +477,11 @@ function shortcutName(p) {
 async function importConfig() {
   const c = LINUX ? await readConfigFile() : await call(vsImportConfig());
   if (c) {
-    toast(`VPN “${c.name}” importada.`, "ok");
+    toast(t("VPN “{0}” imported.", c.name), "ok");
     if (c.needAuth) openCred(c.name);
   }
 }
-// Linux: o seletor de arquivos é o do navegador, que entrega o conteúdo (não o caminho).
+// Linux: the file picker is the browser's, which hands over the content (not the path).
 function readConfigFile() {
   return new Promise(resolve => {
     const f = $("cfgFile");
@@ -442,7 +489,7 @@ function readConfigFile() {
     f.onchange = async () => {
       const file = f.files[0];
       if (!file) return resolve(null);
-      if (file.size > 1 << 20) { toast("Arquivo grande demais para uma configuração de VPN.", "error"); return resolve(null); }
+      if (file.size > 1 << 20) { toast(t("File too large for a VPN configuration."), "error"); return resolve(null); }
       try { resolve(await call(vsImportConfigData(file.name, await file.text()))); } catch (e) { resolve(null); }
     };
     f.click();
@@ -450,10 +497,7 @@ function readConfigFile() {
 }
 let about = null;
 (async () => {
-  try {
-    about = await vsAbout();
-    $("aboutText").textContent = `vpn_specify ${about.version} · Software livre sob a licença MIT`;
-  } catch (e) {}
+  try { about = await vsAbout(); renderTexts(); } catch (e) {}
 })();
 function showLicense() {
   if (!about) return;
@@ -475,24 +519,25 @@ async function saveCfgEdit() {
   const c = await call(vsUpdateConfig(cfgEditing, $("eName").value.trim(), $("eText").value));
   if (!c) return;
   cfgDlg.close();
-  toast(c.name !== cfgEditing ? `VPN renomeada para “${c.name}”.` : "VPN salva.", "ok");
+  toast(c.name !== cfgEditing ? t("VPN renamed to “{0}”.", c.name) : t("VPN saved."), "ok");
   if (c.needAuth && !c.user) openCred(c.name);
 }
-function removeConfig(name) { if (confirm(`Remover a VPN “${name}”?`)) call(vsRemoveConfig(name)); }
+function removeConfig(name) { if (confirm(t("Remove the VPN “{0}”?", name))) call(vsRemoveConfig(name)); }
 function openCred(name) {
   credCfg = name;
   const c = state.settings.configs.find(c => c.name === name) || {};
-  $("credTitle").textContent = "Credenciais · " + name;
+  $("credTitle").textContent = t("Credentials · {0}", name);
   $("cUser").value = c.user || ""; $("cPass").value = "";
   credDlg.showModal();
 }
 async function saveCred() {
   const c = state.settings.configs.find(c => c.name === credCfg) || {};
   if (!$("cPass").value && c.hasPass && $("cUser").value === c.user) { credDlg.close(); return; }
-  await call(vsSetCredentials(credCfg, $("cUser").value.trim(), $("cPass").value), "Credenciais salvas.");
+  await call(vsSetCredentials(credCfg, $("cUser").value.trim(), $("cPass").value), t("Credentials saved."));
   credDlg.close();
 }
 
+// ---------- apps ----------
 function fillConfigSelect(sel, value) {
   sel.innerHTML = state.settings.configs.map(c => `<option>${esc(c.name)}</option>`).join("");
   if (value) sel.value = value;
@@ -502,7 +547,7 @@ function modeChanged() {
 }
 function openAppDlg(a) {
   editing = a;
-  $("appDlgTitle").textContent = a.id ? "Editar app" : "Adicionar app";
+  $("appDlgTitle").textContent = a.id ? t("Edit app") : t("Add app");
   $("aName").value = a.name || ""; $("aPath").value = a.path || ""; $("aArgs").value = a.args || "";
   $("aCapture").value = (a.capture || []).join(", ");
   $("aAutostart").checked = !!a.autostart;
@@ -512,7 +557,7 @@ function openAppDlg(a) {
   appDlg.showModal();
 }
 async function addApp() {
-  if (!state.settings.configs.length) { toast("Importe uma VPN primeiro.", "error"); return; }
+  if (!state.settings.configs.length) { toast(t("Import a VPN first."), "error"); return; }
   const p = LINUX ? await chooseApp() : await call(vsPickApp());
   if (p) openAppDlg({ ...p, mode: LINUX ? "proxy" : "capture" });
 }
@@ -531,13 +576,13 @@ async function saveApp() {
     capture: $("aCapture").value.split(",").map(s => s.trim()).filter(Boolean),
     autostart: $("aAutostart").checked };
   const isNew = !a.id;
-  const saved = await call(vsSaveApp(a), "App salvo.");
+  const saved = await call(vsSaveApp(a), t("App saved."));
   appDlg.close();
   if (isNew) openShortcut(saved.id, saved);
 }
 function removeApp(id) {
   const a = state.settings.apps.find(a => a.id === id);
-  if (confirm(`Remover “${a.name}” (e o atalho dele)?`)) call(vsRemoveApp(id));
+  if (confirm(t("Remove “{0}” (and its shortcut)?", a.name))) call(vsRemoveApp(id));
 }
 function openShortcut(id, app) {
   scApp = app || state.settings.apps.find(a => a.id === id);
@@ -546,21 +591,21 @@ function openShortcut(id, app) {
   scDlg.showModal();
 }
 async function createShortcut() {
-  const lnk = await call(vsCreateShortcut(scApp.id, $("scName").value, $("scDesktop").checked));
+  await call(vsCreateShortcut(scApp.id, $("scName").value, $("scDesktop").checked));
   scDlg.close();
-  toast(LINUX ? `Atalho “${$("scName").value}” criado no menu de aplicativos.`
-    : `Atalho “${$("scName").value}” criado no Menu Iniciar. Procure por ele na pesquisa do Windows.`, "ok");
+  toast(LINUX ? t("Shortcut “{0}” created in the applications menu.", $("scName").value)
+    : t("Shortcut “{0}” created in the Start menu. Look for it in Windows search.", $("scName").value), "ok");
 }
 async function mainShortcut() {
-  await call(vsCreateMainShortcut(), LINUX ? "Atalho “vpn_specify” criado no menu de aplicativos." : "Atalho “vpn_specify” criado no Menu Iniciar.");
+  await call(vsCreateMainShortcut(), LINUX ? t("Shortcut “vpn_specify” created in the applications menu.") : t("Shortcut “vpn_specify” created in the Start menu."));
 }
 
-// ---------- Linux: escolher entre os apps instalados (arquivos .desktop) ----------
+// ---------- Linux: choose among the installed apps (.desktop files) ----------
 let pickResolve = null, pickApps = [], pickShown = [];
 async function chooseApp() {
   const done = new Promise(res => pickResolve = res);
   $("pickSearch").value = "";
-  $("pickList").innerHTML = `<div class="item empty">Carregando…</div>`;
+  $("pickList").innerHTML = `<div class="item empty">${esc(t("Loading…"))}</div>`;
   pickDlg.showModal();
   if (!pickApps.length) {
     try { pickApps = (await vsListApps()) || []; } catch (e) { toast(String(e), "error"); }
@@ -583,7 +628,7 @@ function renderPick() {
       <div class="avatar">${a.iconFile ? `<img src="${esc(vsIconURL(a.iconFile))}" alt="">` : esc((a.name[0] || "?").toUpperCase())}</div>
       <div class="grow"><div class="title">${esc(a.name)}</div>
         <div class="sub">${esc(a.comment || (a.path + " " + a.args))}</div></div>
-    </div>`).join("") : `<div class="item empty">Nenhum app encontrado. Use “Escolher arquivo…”.</div>`;
+    </div>`).join("") : `<div class="item empty">${esc(t("No app found. Use “Choose file…”."))}</div>`;
 }
 async function pickFromFile() {
   try { const p = await vsPickApp(); if (p) finishPick(p); }
@@ -600,19 +645,11 @@ if (LINUX) {
   $("pickSearch").addEventListener("keydown", e => {
     if (e.key === "Enter" && pickShown.length === 1) $("pickList").querySelector(".item.pick").click();
   });
-  $("appsHint").textContent = "Use “Criar atalho” para ter, por exemplo, “DiscordVPN” no menu de aplicativos, ao lado do Discord original.";
-  $("mainScBtn").textContent = "Adicionar “vpn_specify” ao menu de aplicativos";
-  $("modeCaptureOpt").style.display = "none";
-  $("proxyDesc").textContent = "Pelo proxy local: navegadores, apps Chromium/Electron (Discord, Slack, VS Code…) e programas que respeitam HTTP_PROXY. A captura completa (UDP e voz) só existe no Windows.";
-  $("scNameLabel").textContent = "Nome do atalho (aparece no menu de aplicativos)";
-  $("scHint").textContent = "Ao abrir o atalho, o vpn_specify conecta a VPN e abre o app dentro dela. VPNs OpenVPN pedem a senha de administrador ao conectar.";
-  $("credHint").textContent = "A senha é guardada criptografada; a chave fica em ~/.local/share/vpn_specify, legível só pela sua conta.";
-  $("aAutostartText").textContent = "Abrir junto com o sistema (ao entrar na sessão)";
-  $("aAutostartHint").textContent = "O vpn_specify conecta a VPN e abre o app logo depois de entrar na sessão (VPNs OpenVPN pedem a senha de administrador nessa hora). Os apps marcados precisam usar a mesma VPN.";
-  $("aPath").readOnly = false;
-  $("aPath").placeholder = "/usr/bin/programa";
+} else {
+  $("aPath").readOnly = true;
 }
 
+renderTexts();
 refresh(); refreshLog();
 setInterval(refresh, 1000);
 setInterval(() => { if ($("logBox").open) refreshLog(); }, 1000);

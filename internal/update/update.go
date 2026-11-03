@@ -1,13 +1,13 @@
-// Package update procura e baixa novas versões nas releases do GitHub
+// Package update finds and downloads new versions from the GitHub releases
 // (https://github.com/D3T3F/vpn_specify/releases).
 //
-// Cada release tem um pacote por sistema, gerado pelo scripts\build.ps1:
-//   - Windows: vpn_specify-<versão>-win64.zip (com o vpn_specify-setup.exe);
-//   - Linux:   vpn_specify-<versão>-linux-<amd64|arm64>.tar.gz.
+// Each release has one package per system, built by scripts\build.ps1:
+//   - Windows: vpn_specify-<version>-win64.zip (with vpn_specify-setup.exe);
+//   - Linux:   vpn_specify-<version>-linux-<amd64|arm64>.tar.gz.
 //
-// O download só é aceito se o SHA-256 bater com o que o GitHub informa para
-// o arquivo (campo "digest" da API) ou com um arquivo SHA256SUMS da release.
-// Instalar a versão baixada fica a cargo de Prepare (apply_*.go).
+// A download is only accepted if its SHA-256 matches what GitHub reports for
+// the file (the API's "digest" field) or a SHA256SUMS file in the release.
+// Installing the downloaded version is up to Prepare (apply_*.go).
 package update
 
 import (
@@ -20,7 +20,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -31,30 +30,31 @@ import (
 	"strings"
 	"time"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/version"
 )
 
-// Repo é o repositório cujas releases são consultadas.
+// Repo is the repository whose releases are checked.
 const Repo = "D3T3F/vpn_specify"
 
-// ReleasesPage é a página das releases (para o usuário ver no navegador).
+// ReleasesPage is the releases page (for the user to see in the browser).
 const ReleasesPage = "https://github.com/" + Repo + "/releases"
 
 var (
 	apiURL         = "https://api.github.com/repos/" + Repo + "/releases/latest"
 	downloadPrefix = "https://github.com/" + Repo + "/releases/download/"
 	apiClient      = &http.Client{Timeout: 20 * time.Second}
-	dlClient       = &http.Client{} // sem limite total: o pacote pode demorar; quem chama passa um contexto
+	dlClient       = &http.Client{} // no overall limit: the package may take a while; callers pass a context
 )
 
-// maxPackage limita o tamanho aceito de um pacote (os atuais têm ~11 MB).
+// maxPackage limits the accepted package size (current ones are ~11 MB).
 const maxPackage = 200 << 20
 
 type Release struct {
 	Version string // "1.2.3"
 	Name    string
-	Notes   string // texto da release (Markdown)
-	URL     string // página da release
+	Notes   string // release text (Markdown)
+	URL     string // release page
 	Asset   Asset
 }
 
@@ -65,7 +65,7 @@ type Asset struct {
 	SHA256 string // hex
 }
 
-// AssetName é o nome do pacote desta plataforma para a versão ver.
+// AssetName is this platform's package name for version ver.
 func AssetName(ver string) string {
 	switch runtime.GOOS {
 	case "windows":
@@ -76,7 +76,7 @@ func AssetName(ver string) string {
 	return ""
 }
 
-// parseVersion aceita "1.2.3" ou "v1.2.3".
+// parseVersion accepts "1.2.3" or "v1.2.3".
 func parseVersion(s string) ([3]int, bool) {
 	var v [3]int
 	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(s), "v"), ".")
@@ -93,13 +93,13 @@ func parseVersion(s string) ([3]int, bool) {
 	return v, true
 }
 
-// IsRelease diz se ver é uma versão publicada ("dev" e afins não são).
+// IsRelease reports whether ver is a published version ("dev" and the like are not).
 func IsRelease(ver string) bool {
 	_, ok := parseVersion(ver)
 	return ok
 }
 
-// Newer diz se a é mais nova que b.
+// Newer reports whether a is newer than b.
 func Newer(a, b string) bool {
 	va, ok1 := parseVersion(a)
 	vb, ok2 := parseVersion(b)
@@ -138,7 +138,7 @@ type ghRelease struct {
 	} `json:"assets"`
 }
 
-// Latest consulta a release mais recente (sem rascunhos nem pré-releases).
+// Latest fetches the most recent release (no drafts or pre-releases).
 func Latest(ctx context.Context) (*Release, error) {
 	req, err := newRequest(ctx, apiURL)
 	if err != nil {
@@ -148,23 +148,23 @@ func Latest(ctx context.Context) (*Release, error) {
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	resp, err := apiClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("não consegui consultar o GitHub: %w", err)
+		return nil, i18n.Wrap(err, "could not reach GitHub")
 	}
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, errors.New("nenhuma versão publicada ainda")
+		return nil, i18n.Error("no published version yet")
 	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
-		return nil, errors.New("o GitHub limitou as consultas; tente de novo mais tarde")
+		return nil, i18n.Error("GitHub rate-limited the requests; try again later")
 	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("o GitHub respondeu %s", resp.Status)
+		return nil, i18n.Error("GitHub answered {0}", resp.Status)
 	}
 	var gr ghRelease
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&gr); err != nil {
-		return nil, fmt.Errorf("resposta inválida do GitHub: %w", err)
+		return nil, i18n.Wrap(err, "invalid reply from GitHub")
 	}
 	if !IsRelease(gr.TagName) {
-		return nil, fmt.Errorf("a última release (%q) não tem um número de versão válido", gr.TagName)
+		return nil, i18n.Error("the latest release ({0}) has no valid version number", strconv.Quote(gr.TagName))
 	}
 	r := &Release{Version: strings.TrimPrefix(gr.TagName, "v"), Name: gr.Name, Notes: gr.Body, URL: gr.HTMLURL}
 	want := AssetName(r.Version)
@@ -178,7 +178,7 @@ func Latest(ctx context.Context) (*Release, error) {
 		}
 	}
 	if r.Asset.Name == "" {
-		return r, fmt.Errorf("a versão %s não tem pacote para este sistema (%s)", r.Version, want)
+		return r, i18n.Error("version {0} has no package for this system ({1})", r.Version, want)
 	}
 	if r.Asset.SHA256 == "" && sums != "" {
 		if h, err := sumFromFile(ctx, sums, want); err == nil {
@@ -188,10 +188,10 @@ func Latest(ctx context.Context) (*Release, error) {
 	return r, nil
 }
 
-// sumFromFile lê o hash de name num arquivo no formato do sha256sum.
+// sumFromFile reads the hash of name from a file in sha256sum format.
 func sumFromFile(ctx context.Context, url, name string) (string, error) {
 	if !strings.HasPrefix(url, downloadPrefix) {
-		return "", errors.New("endereço inesperado")
+		return "", errors.New("unexpected address")
 	}
 	req, err := newRequest(ctx, url)
 	if err != nil {
@@ -209,11 +209,11 @@ func sumFromFile(ctx context.Context, url, name string) (string, error) {
 			return strings.ToLower(f[0]), nil
 		}
 	}
-	return "", errors.New("hash não encontrado")
+	return "", errors.New("hash not found")
 }
 
-// Check devolve a release se houver uma versão mais nova que esta, ou nil
-// se já está atualizado. Builds sem versão ("dev") nunca se atualizam.
+// Check returns the release if there is a version newer than this one, or
+// nil if already up to date. Builds without a version ("dev") never update.
 func Check(ctx context.Context) (*Release, error) {
 	if !IsRelease(version.Version) {
 		return nil, nil
@@ -221,7 +221,7 @@ func Check(ctx context.Context) (*Release, error) {
 	r, err := Latest(ctx)
 	if err != nil {
 		if r != nil && !Newer(r.Version, version.Version) {
-			return nil, nil // sem pacote para este sistema, mas também não é mais nova
+			return nil, nil // no package for this system, but it is not newer either
 		}
 		return nil, err
 	}
@@ -231,18 +231,18 @@ func Check(ctx context.Context) (*Release, error) {
 	return r, nil
 }
 
-// Download baixa o pacote numa pasta temporária nova e confere o SHA-256.
-// progress (opcional) recebe bytes baixados e o total.
+// Download fetches the package into a new temporary folder and checks its
+// SHA-256. progress (optional) receives the downloaded bytes and the total.
 func Download(ctx context.Context, a Asset, progress func(done, total int64)) (string, error) {
 	if !strings.HasPrefix(a.URL, downloadPrefix) {
-		return "", fmt.Errorf("endereço de download inesperado: %s", a.URL)
+		return "", i18n.Error("unexpected download address: {0}", a.URL)
 	}
 	want, err := hex.DecodeString(a.SHA256)
 	if err != nil || len(want) != sha256.Size {
-		return "", errors.New("a release não informa o SHA-256 do pacote; por segurança a atualização não foi instalada")
+		return "", i18n.Error("the release does not report the package SHA-256; for safety the update was not installed")
 	}
 	if a.Size > maxPackage {
-		return "", errors.New("pacote grande demais")
+		return "", i18n.Error("package too large")
 	}
 	dir, err := os.MkdirTemp("", "vpn_specify-update-")
 	if err != nil {
@@ -258,11 +258,11 @@ func Download(ctx context.Context, a Asset, progress func(done, total int64)) (s
 	}
 	resp, err := dlClient.Do(req)
 	if err != nil {
-		return fail(fmt.Errorf("download falhou: %w", err))
+		return fail(i18n.Wrap(err, "download failed"))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fail(fmt.Errorf("download falhou: %s", resp.Status))
+		return fail(i18n.Error("download failed: {0}", resp.Status))
 	}
 	p := filepath.Join(dir, path.Base(a.Name))
 	f, err := os.Create(p)
@@ -276,13 +276,13 @@ func Download(ctx context.Context, a Asset, progress func(done, total int64)) (s
 		err = cerr
 	}
 	if err != nil {
-		return fail(fmt.Errorf("download falhou: %w", err))
+		return fail(i18n.Wrap(err, "download failed"))
 	}
 	if pw.done > maxPackage {
-		return fail(errors.New("pacote grande demais"))
+		return fail(i18n.Error("package too large"))
 	}
 	if got := h.Sum(nil); !equalBytes(got, want) {
-		return fail(fmt.Errorf("o pacote baixado está corrompido ou foi alterado (SHA-256 %x, esperado %x)", got, want))
+		return fail(i18n.Error("the downloaded package is corrupted or was altered (SHA-256 {0}, expected {1})", hex.EncodeToString(got), hex.EncodeToString(want)))
 	}
 	return p, nil
 }
@@ -314,7 +314,7 @@ func (w *progressWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// CleanupOld apaga pastas de atualizações antigas (mais de um dia).
+// CleanupOld deletes old update folders (more than a day old).
 func CleanupOld() {
 	ents, _ := os.ReadDir(os.TempDir())
 	for _, e := range ents {
@@ -327,7 +327,7 @@ func CleanupOld() {
 	}
 }
 
-// extractZipFile extrai do zip o arquivo de nome base (em qualquer pasta).
+// extractZipFile extracts from the zip the file named base (in any folder).
 func extractZipFile(archive, base, dst string) error {
 	zr, err := zip.OpenReader(archive)
 	if err != nil {
@@ -335,7 +335,7 @@ func extractZipFile(archive, base, dst string) error {
 	}
 	defer zr.Close()
 	for _, f := range zr.File {
-		// zips do Compress-Archive (PowerShell 5.1) usam "\" como separador
+		// zips made by Compress-Archive (PowerShell 5.1) use "\" as separator
 		if path.Base(strings.ReplaceAll(f.Name, `\`, "/")) != base || f.FileInfo().IsDir() {
 			continue
 		}
@@ -346,10 +346,10 @@ func extractZipFile(archive, base, dst string) error {
 		defer rc.Close()
 		return writeFile(dst, io.LimitReader(rc, maxPackage), 0o755)
 	}
-	return fmt.Errorf("o pacote não contém %s", base)
+	return i18n.Error("the package does not contain {0}", base)
 }
 
-// extractTarFile extrai do .tar.gz o arquivo comum de nome base.
+// extractTarFile extracts from the .tar.gz the regular file named base.
 func extractTarFile(archive, base, dst string) error {
 	f, err := os.Open(archive)
 	if err != nil {
@@ -364,7 +364,7 @@ func extractTarFile(archive, base, dst string) error {
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			return fmt.Errorf("o pacote não contém %s", base)
+			return i18n.Error("the package does not contain {0}", base)
 		}
 		if err != nil {
 			return err
@@ -387,8 +387,8 @@ func writeFile(dst string, r io.Reader, mode os.FileMode) error {
 	return err
 }
 
-// Plan é a atualização pronta para aplicar. Run é chamado depois que o
-// vpn_specify desconectou e liberou as portas, logo antes de sair.
+// Plan is an update ready to apply. Run is called after vpn_specify has
+// disconnected and released its ports, right before exiting.
 type Plan struct {
 	Description string
 	Run         func() error

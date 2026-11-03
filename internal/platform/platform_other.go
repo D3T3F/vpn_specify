@@ -9,7 +9,7 @@ import (
 	"os/exec"
 )
 
-var errWindowsOnly = errors.New("só no Windows")
+var errWindowsOnly = errors.New("Windows only")
 
 func IsElevated() bool { return os.Geteuid() == 0 }
 
@@ -21,9 +21,9 @@ func HideConsole(cmd *exec.Cmd) {}
 
 func ElevateSelf(args []string) error { return errWindowsOnly }
 
-// MessageBox mostra um aviso fora da janela principal: zenity (GNOME),
-// kdialog (KDE) ou notify-send; sem nenhum deles, só no terminal.
-// flags segue o MessageBox do Windows: 0x10 = erro.
+// MessageBox shows a notice outside the main window: zenity (GNOME),
+// kdialog (KDE) or notify-send; without any of them, only in the terminal.
+// flags follows the Windows MessageBox: 0x10 = error.
 func MessageBox(title, text string, flags uintptr) {
 	fmt.Fprintf(os.Stderr, "%s: %s\n", title, text)
 	kind := "--info"

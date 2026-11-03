@@ -1,8 +1,8 @@
-// Comando vpn_specify: conecta a uma VPN (WireGuard ou OpenVPN) sem alterar
-// as rotas do sistema e coloca nela só os apps escolhidos.
+// Command vpn_specify connects to a VPN (WireGuard or OpenVPN) without
+// changing the system routes and puts only the chosen apps inside it.
 //
-// Sem argumentos abre a interface gráfica; "up", "run" e "status" são os
-// comandos de terminal (veja usage).
+// Without arguments it opens the graphical interface; "up", "run", "status"
+// and "update" are the terminal commands (see usage).
 package main
 
 import (
@@ -14,94 +14,99 @@ import (
 	"syscall"
 
 	"vpn_specify/internal/gui"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/setup"
 	"vpn_specify/internal/tunnel"
 	"vpn_specify/internal/version"
 )
 
 func usage() {
-	fmt.Fprint(os.Stderr, `vpn_specify - VPN só para os apps que você escolher
+	fmt.Fprint(os.Stderr, i18n.T(`vpn_specify - VPN only for the apps you choose
 
-Uso:
+Usage:
   vpn_specify
-      Abre a interface gráfica.
+      Opens the graphical interface.
 
-  vpn_specify up <arquivo.conf|arquivo.ovpn> [opções] [-- programa args...]
-      Conecta na VPN e abre o proxy local. Fica rodando até Ctrl+C.
-      Se um programa for passado depois de "--", ele é aberto já na VPN.
+  vpn_specify up <file.conf|file.ovpn> [options] [-- program args...]
+      Connects to the VPN and opens the local proxy. Runs until Ctrl+C.
+      If a program is given after "--", it is opened already in the VPN.
 
-  vpn_specify run [opções] <programa> [args...]
-      Abre um programa usando a VPN (precisa de um "up" rodando).
+  vpn_specify run [options] <program> [args...]
+      Opens a program using the VPN (needs a running "up").
 
-  vpn_specify status [opções]
-      Mostra seu IP público direto e pela VPN.
+  vpn_specify status [options]
+      Shows your public IP, direct and through the VPN.
 
   vpn_specify update [-check] [-y]
-      Procura uma versão nova nas releases do GitHub e oferece instalar.
+      Looks for a new version in the GitHub releases and offers to install it.
 
   vpn_specify version
-      Mostra a versão.
+      Shows the version.
 
   vpn_specify autostart
-      Abre na VPN os apps marcados para iniciar com o sistema (usado pela
-      inicialização do sistema; normalmente não é chamado à mão).
+      Opens in the VPN the apps marked to start with the system (used by the
+      system startup; normally not called by hand).
 
-Exemplos:
-  vpn_specify up trabalho.ovpn
+Examples:
+  vpn_specify up work.ovpn
   vpn_specify up wg0.conf -- chrome
   vpn_specify run chrome
   vpn_specify run firefox
   vpn_specify run curl https://ifconfig.me
-  vpn_specify run -profile cliente2 msedge
+  vpn_specify run -profile client2 msedge
 
-Use "vpn_specify <comando> -h" para ver as opções de cada comando.
-`)
+Use "vpn_specify <command> -h" to see the options of each command.
+The language follows the system or the choice made in the interface.
+`))
+}
+
+// fail prints the error and exits (with the program's exit code, if the
+// error came from one).
+func fail(err error) {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		os.Exit(exitErr.ExitCode())
+	}
+	fmt.Fprintln(os.Stderr, i18n.T("error: {0}", err))
+	os.Exit(1)
 }
 
 func main() {
 	log.SetFlags(log.Ltime)
-	var err error
+	i18n.Init()
 	if len(os.Args) < 2 {
-		err = gui.Main() // sem argumentos: interface gráfica
-		if err != nil && !isCancelled(err) {
-			fmt.Fprintln(os.Stderr, "erro:", err)
-			os.Exit(1)
+		if err := gui.Main(); err != nil && !isCancelled(err) { // no arguments: graphical interface
+			fail(err)
 		}
 		return
 	}
+	var err error
 	switch os.Args[1] {
 	case "launch":
 		if len(os.Args) != 3 {
-			fmt.Fprintln(os.Stderr, "uso: vpn_specify launch <id-do-app>")
+			fmt.Fprintln(os.Stderr, "usage: vpn_specify launch <app-id>")
 			os.Exit(2)
 		}
 		if err := gui.LaunchMain(os.Args[2]); err != nil && !isCancelled(err) {
 			os.Exit(1)
 		}
 		return
-	case "autostart": // entrada de inicialização do sistema (veja internal/autostart)
+	case "autostart": // system startup entry (see internal/autostart)
 		if err := gui.AutostartMain(); err != nil && !isCancelled(err) {
-			fmt.Fprintln(os.Stderr, "erro:", err)
-			os.Exit(1)
+			fail(err)
 		}
 		return
 	case "agent":
-		err = gui.AgentMain(os.Args[2:])
-		if err != nil {
+		if err := gui.AgentMain(os.Args[2:]); err != nil {
 			os.Exit(1)
 		}
 		return
-	case "openvpn-helper": // Linux: aberto via pkexec pela interface gráfica (veja tunnel.RunOpenVPNHelper)
+	case "openvpn-helper": // Linux: started via pkexec by the GUI (see tunnel.RunOpenVPNHelper)
 		if err := tunnel.RunOpenVPNHelper(os.Args[2:]); err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				os.Exit(exitErr.ExitCode())
-			}
-			fmt.Fprintln(os.Stderr, "erro:", err)
-			os.Exit(1)
+			fail(err)
 		}
 		return
-	case "uninstall": // chamado por Configurações › Aplicativos instalados
+	case "uninstall": // called from Settings › Installed apps
 		if err := setup.Uninstall(os.Args[2:]); err != nil && !isCancelled(err) {
 			os.Exit(1)
 		}
@@ -121,21 +126,17 @@ func main() {
 		usage()
 		return
 	default:
-		fmt.Fprintf(os.Stderr, "comando desconhecido: %s\n\n", os.Args[1])
+		fmt.Fprintln(os.Stderr, i18n.T("unknown command: {0}", os.Args[1]))
+		fmt.Fprintln(os.Stderr)
 		usage()
 		os.Exit(2)
 	}
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			os.Exit(exitErr.ExitCode())
-		}
-		fmt.Fprintln(os.Stderr, "erro:", err)
-		os.Exit(1)
+		fail(err)
 	}
 }
 
-// isCancelled: o usuário recusou o prompt do UAC (ERROR_CANCELLED).
+// isCancelled: the user refused the UAC prompt (ERROR_CANCELLED).
 func isCancelled(err error) bool {
 	var en syscall.Errno
 	return errors.As(err, &en) && en == 1223

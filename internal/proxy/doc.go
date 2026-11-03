@@ -1,4 +1,4 @@
-// Package proxy expõe um [tunnel.Tunnel] como proxies locais: SOCKS5 (TCP
-// CONNECT e UDP ASSOCIATE), HTTP (CONNECT e requisições normais) e
-// encaminhamento de portas TCP/UDP (-L).
+// Package proxy exposes a [tunnel.Tunnel] as local proxies: SOCKS5 (TCP
+// CONNECT and UDP ASSOCIATE), HTTP (CONNECT and plain requests) and TCP/UDP
+// port forwarding (-L).
 package proxy

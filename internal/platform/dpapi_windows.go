@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ---------- DPAPI: senha salva só pode ser lida por este usuário do Windows ----------
+// ---------- DPAPI: a saved password can only be read by this Windows user ----------
 
 func Protect(s string) (string, error) {
 	b := []byte(s)
@@ -26,7 +26,7 @@ func Protect(s string) (string, error) {
 func Unprotect(enc string) (string, error) {
 	b, err := base64.StdEncoding.DecodeString(enc)
 	if err != nil || len(b) == 0 {
-		return "", errors.New("dado protegido inválido")
+		return "", errors.New("invalid protected data")
 	}
 	in := windows.DataBlob{Size: uint32(len(b)), Data: &b[0]}
 	var out windows.DataBlob

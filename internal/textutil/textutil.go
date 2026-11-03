@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// SplitList separa uma lista por vírgulas, ignorando itens vazios.
+// SplitList splits a comma-separated list, skipping empty items.
 func SplitList(s string) []string {
 	var out []string
 	for _, f := range strings.Split(s, ",") {

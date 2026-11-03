@@ -3,8 +3,6 @@
 package gui
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -12,13 +10,14 @@ import (
 	"strings"
 
 	vpnspecify "vpn_specify"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/netcheck"
 	"vpn_specify/internal/store"
 	"vpn_specify/internal/version"
 )
 
-// api: as funções vs* que a página chama (as mesmas do Windows, em
-// window_windows.go), mais vsListApps e vsImportConfigData, só do Linux.
+// api: the vs* functions the page calls (the same as on Windows, in
+// window_windows.go), plus vsListApps and vsImportConfigData, Linux only.
 func (a *agent) api() map[string]any {
 	m := a.baseAPI()
 	for k, f := range a.upd.api() {
@@ -44,8 +43,8 @@ func (a *agent) baseAPI() map[string]any {
 			lines, next := a.logs.since(since)
 			return map[string]any{"lines": lines, "next": next}
 		},
-		// No Linux a página usa o seletor de arquivos do próprio navegador e
-		// manda o conteúdo (o navegador não revela o caminho do arquivo).
+		// On Linux the page uses the browser's own file picker and sends the
+		// content (the browser does not reveal the file path).
 		"vsImportConfigData": func(fileName, text string) (*store.VPNConfig, error) {
 			base := store.SafeName(filepath.Base(fileName), "_")
 			if base == "" || base == "." {
@@ -64,28 +63,28 @@ func (a *agent) baseAPI() map[string]any {
 			if err != nil {
 				return nil, err
 			}
-			log.Printf("configuração importada: %s (%s)", c.Name, c.Kind)
+			log.Printf("configuration imported: %s (%s)", c.Name, c.Kind)
 			return &c, nil
 		},
 		"vsRemoveConfig": func(name string) error {
 			if a.configInUse(name) {
-				return errors.New("desconecte esta VPN antes de removê-la")
+				return i18n.Error("disconnect this VPN before removing it")
 			}
 			return a.store.RemoveConfig(name)
 		},
 		"vsConfigText": func(name string) (string, error) { return a.store.ConfigText(name) },
 		"vsUpdateConfig": func(name, newName, text string) (*store.VPNConfig, error) {
 			if a.configInUse(name) {
-				return nil, errors.New("desconecte esta VPN antes de editá-la")
+				return nil, i18n.Error("disconnect this VPN before editing it")
 			}
 			c, err := a.store.UpdateConfig(name, newName, text)
 			if err != nil {
 				return nil, err
 			}
 			if c.Name != name {
-				log.Printf("VPN renomeada: %s -> %s", name, c.Name)
+				log.Printf("VPN renamed: %s -> %s", name, c.Name)
 			} else {
-				log.Printf("VPN %s alterada", name)
+				log.Printf("VPN %s changed", name)
 			}
 			return &c, nil
 		},
@@ -106,7 +105,7 @@ func (a *agent) baseAPI() map[string]any {
 				a.mu.Unlock()
 			}()
 		},
-		// vsListApps: os apps do menu de aplicativos (arquivos .desktop).
+		// vsListApps: the apps of the applications menu (.desktop files).
 		"vsListApps": func() []installedApp {
 			apps := listInstalledApps()
 			for _, x := range apps {
@@ -114,9 +113,9 @@ func (a *agent) baseAPI() map[string]any {
 			}
 			return apps
 		},
-		// vsPickApp: escolher um programa ou um .desktop no seletor de arquivos.
+		// vsPickApp: choose a program or a .desktop file in the file picker.
 		"vsPickApp": func() (*pickedApp, error) {
-			p, ok, err := pickFile("Escolha o programa ou atalho", applicationsDir(), "Programas e atalhos", nil)
+			p, ok, err := pickFile(i18n.T("Choose the program or shortcut"), applicationsDir(), i18n.T("Programs and shortcuts"), nil)
 			if err != nil || !ok {
 				return nil, err
 			}
@@ -124,14 +123,14 @@ func (a *agent) baseAPI() map[string]any {
 				return appFromDesktopFile(p)
 			}
 			if fi, err := os.Stat(p); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
-				return nil, fmt.Errorf("%s não é um programa executável", filepath.Base(p))
+				return nil, i18n.Error("{0} is not an executable program", filepath.Base(p))
 			}
 			return &pickedApp{Name: filepath.Base(p), Path: p, Capture: []string{filepath.Base(p)}}, nil
 		},
 		"vsSaveApp": func(app store.AppEntry) (store.AppEntry, error) {
-			app.Mode, app.Capture = "proxy", nil // sem captura completa no Linux
+			app.Mode, app.Capture = "proxy", nil // no full capture on Linux
 			if app.Path != "" && !filepath.IsAbs(app.Path) {
-				return app, errors.New("informe o caminho completo do programa (ex.: /usr/bin/firefox)")
+				return app, i18n.Error("enter the full path of the program (e.g. /usr/bin/firefox)")
 			}
 			saved, err := a.store.SaveApp(app)
 			if err != nil {
@@ -153,12 +152,12 @@ func (a *agent) baseAPI() map[string]any {
 		"vsLaunchApp": func(id string) error {
 			app, ok := a.store.App(id)
 			if !ok {
-				return errors.New("app não encontrado")
+				return store.ErrAppNotFound
 			}
 			go func() {
 				if err := a.launchApp(app); err != nil {
-					log.Printf("erro ao abrir %s: %v", app.Name, err)
-					a.setNotice(fmt.Sprintf("Não consegui abrir %s: %v", app.Name, err))
+					log.Printf("error opening %s: %v", app.Name, err)
+					a.setNotice(i18n.T("Could not open {0}: {1}", app.Name, err))
 				}
 			}()
 			return nil
@@ -166,11 +165,11 @@ func (a *agent) baseAPI() map[string]any {
 		"vsCreateShortcut": func(id, name string, desktop bool) (string, error) {
 			app, ok := a.store.App(id)
 			if !ok {
-				return "", errors.New("app não encontrado")
+				return "", store.ErrAppNotFound
 			}
 			name = store.SafeName(name, "")
 			if name == "" {
-				return "", errors.New("nome do atalho vazio")
+				return "", i18n.Error("empty shortcut name")
 			}
 			exe, err := os.Executable()
 			if err != nil {
@@ -178,7 +177,7 @@ func (a *agent) baseAPI() map[string]any {
 			}
 			file := "vpn_specify-" + strings.ReplaceAll(name, " ", "_") + ".desktop"
 			lnk := filepath.Join(applicationsDir(), file)
-			desc := fmt.Sprintf("Abre %s pela VPN %s (vpn_specify)", app.Name, app.Config)
+			desc := i18n.T("Opens {0} through the VPN {1} (vpn_specify)", app.Name, app.Config)
 			execLine := desktopQuote(exe) + " launch " + desktopQuote(app.ID)
 			if err := writeDesktopFile(lnk, name, desc, execLine, app.Icon); err != nil {
 				return "", err
@@ -193,7 +192,7 @@ func (a *agent) baseAPI() map[string]any {
 				_ = os.Remove(filepath.Join(desktopDir(), filepath.Base(app.Shortcut)))
 			}
 			_ = a.store.SetShortcut(app.ID, lnk)
-			log.Printf("atalho criado: %s", lnk)
+			log.Printf("shortcut created: %s", lnk)
 			return lnk, nil
 		},
 		"vsCreateMainShortcut": func() (string, error) {
@@ -202,9 +201,16 @@ func (a *agent) baseAPI() map[string]any {
 				return "", err
 			}
 			lnk := filepath.Join(applicationsDir(), "vpn_specify.desktop")
-			return lnk, writeDesktopFile(lnk, "vpn_specify", "VPN só para os apps escolhidos", desktopQuote(exe), logoIconPath())
+			return lnk, writeDesktopFile(lnk, "vpn_specify", i18n.T("VPN only for the apps you choose"), desktopQuote(exe), logoIconPath())
 		},
 		"vsSetAutoDisconnect": func(v bool) error { return a.store.SetAutoDisconnect(v) },
+		// vsSetLanguage switches the interface language and saves the choice.
+		"vsSetLanguage": func(code string) (i18n.PageState, error) {
+			if err := i18n.Save(code); err != nil {
+				return i18n.PageState{}, err
+			}
+			return i18n.State(), nil
+		},
 		"vsAbout": func() map[string]string {
 			return map[string]string{"version": version.Version, "license": vpnspecify.License}
 		},

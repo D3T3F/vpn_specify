@@ -7,7 +7,7 @@ import (
 	"io/fs"
 )
 
-// payload\ é preparada pelo scripts\build.ps1 -Dist (não fica no código-fonte).
+// payload\ is prepared by scripts\build.ps1 -Dist (it is not in the source tree).
 //
 //go:embed all:payload
 var payload embed.FS

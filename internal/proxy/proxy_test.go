@@ -27,7 +27,7 @@ import (
 	"vpn_specify/internal/tunnel"
 )
 
-// directTunnel "conecta direto", para testar os proxies sem VPN.
+// directTunnel "connects directly", to test the proxies without a VPN.
 type directTunnel struct{}
 
 func (directTunnel) DialContext(ctx context.Context, n, a string) (net.Conn, error) {
@@ -72,11 +72,11 @@ func getVia(t *testing.T, target string, socksAddr, httpAddr string) {
 		DialContext: d.(xproxy.ContextDialer).DialContext,
 	}}
 	checkBody(t, c, target)
-	// via proxy HTTP (requisição normal)
+	// through the HTTP proxy (plain request)
 	pu, _ := url.Parse("http://" + httpAddr)
 	c = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(pu)}}
 	checkBody(t, c, target)
-	// via proxy HTTP (CONNECT), feito à mão
+	// through the HTTP proxy (CONNECT), by hand
 	u, _ := url.Parse(target)
 	if u.Port() == "" {
 		u.Host += ":80"
@@ -90,7 +90,7 @@ func getVia(t *testing.T, target string, socksAddr, httpAddr string) {
 	br := bufio.NewReader(pc)
 	resp, err := http.ReadResponse(br, nil)
 	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("CONNECT falhou: %v %v", err, resp)
+		t.Fatalf("CONNECT failed: %v %v", err, resp)
 	}
 	fmt.Fprintf(pc, "GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.Host)
 	resp, err = http.ReadResponse(br, nil)
@@ -99,7 +99,7 @@ func getVia(t *testing.T, target string, socksAddr, httpAddr string) {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	if string(b) != "ola-vpn" {
-		t.Fatalf("CONNECT: corpo inesperado %q", b)
+		t.Fatalf("CONNECT: unexpected body %q", b)
 	}
 }
 
@@ -112,7 +112,7 @@ func checkBody(t *testing.T, c *http.Client, target string) {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	if string(b) != "ola-vpn" {
-		t.Fatalf("corpo inesperado %q", b)
+		t.Fatalf("unexpected body %q", b)
 	}
 }
 
@@ -137,14 +137,14 @@ func genKey(t *testing.T) (priv, pub []byte) {
 	return priv, pub
 }
 
-// TestWireGuardEndToEnd sobe um servidor WireGuard em memória (com um
-// servidor HTTP dentro da "rede da VPN" em 10.77.0.1) e conecta o
-// vpn_specify nele usando um arquivo .conf normal.
+// TestWireGuardEndToEnd starts an in-memory WireGuard server (with an HTTP
+// server inside the "VPN network" at 10.77.0.1) and connects vpn_specify to
+// it using a normal .conf file.
 func TestWireGuardEndToEnd(t *testing.T) {
 	sPriv, sPub := genKey(t)
 	cPriv, cPub := genKey(t)
 
-	// porta UDP livre para o servidor
+	// free UDP port for the server
 	uc, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -201,17 +201,17 @@ PersistentKeepalive = 25
 	getVia(t, "http://10.77.0.1/", s, h)
 	checkUDP(t, tun, s, "10.77.0.1:7")
 
-	// 10.77.0.1 só existe dentro da VPN: direto tem que falhar.
+	// 10.77.0.1 only exists inside the VPN: going direct must fail.
 	c := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	if _, err := c.Get("http://10.77.0.1/"); err == nil {
-		t.Fatal("10.77.0.1 respondeu fora da VPN?!")
+		t.Fatal("10.77.0.1 answered outside the VPN?!")
 	}
 }
 
-// checkUDP testa SOCKS5 UDP e o encaminhamento -L até um servidor de eco.
+// checkUDP tests SOCKS5 UDP and -L forwarding to an echo server.
 func checkUDP(t *testing.T, tun tunnel.Tunnel, socksAddr, echoAddr string) {
 	t.Helper()
-	for i := 0; i < 3; i++ { // várias mensagens na mesma associação seriam ideais; aqui uma por associação
+	for i := 0; i < 3; i++ { // several messages per association would be ideal; here it is one each
 		msg := []byte(fmt.Sprintf("eco-%d", i))
 		got, err := netcheck.SocksUDPExchange(socksAddr, echoAddr, msg, 5*time.Second)
 		if err != nil || string(got) != string(msg) {

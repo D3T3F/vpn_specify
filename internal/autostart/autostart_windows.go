@@ -5,7 +5,6 @@ package autostart
 import (
 	"bytes"
 	"encoding/xml"
-	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
@@ -13,11 +12,12 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 )
 
-// TaskName é o nome da tarefa no Agendador de Tarefas.
-const TaskName = `vpn_specify\Iniciar apps na VPN`
+// TaskName is the task name in Task Scheduler.
+const TaskName = `vpn_specify\Start apps in VPN`
 
 func esc(s string) string {
 	var b bytes.Buffer
@@ -25,15 +25,15 @@ func esc(s string) string {
 	return b.String()
 }
 
-// taskXML: dispara no logon deste usuário (15 s depois, para a rede subir),
-// roda na sessão dele com privilégio máximo, sem limite de tempo (o
-// vpn_specify fica aberto enquanto os apps usam a VPN) e também na bateria.
+// taskXML: fires at this user's logon (15 s later, so the network is up),
+// runs in their session with highest privileges, with no time limit
+// (vpn_specify stays open while the apps use the VPN) and on battery too.
 func taskXML(userID, exe string) string {
 	return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Author>vpn_specify</Author>
-    <Description>Abre na VPN os apps marcados para iniciar com o sistema no vpn_specify.</Description>
+    <Description>Opens in the VPN the apps marked in vpn_specify to start with the system.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -80,14 +80,14 @@ func schtasks(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// Enable cria (ou atualiza) a tarefa para rodar exe no logon. Precisa de
-// Administrador (o agente da interface já roda assim).
+// Enable creates (or updates) the task to run exe at logon. It needs
+// Administrator (the interface agent already runs that way).
 func Enable(exe string) error {
 	u, err := user.Current()
 	if err != nil {
 		return err
 	}
-	// o schtasks lê o XML em UTF-16 com BOM
+	// schtasks reads the XML as UTF-16 with BOM
 	var b bytes.Buffer
 	b.Write([]byte{0xFF, 0xFE})
 	for _, r := range utf16.Encode([]rune(taskXML(u.Username, exe))) {
@@ -105,23 +105,23 @@ func Enable(exe string) error {
 	}
 	f.Close()
 	if out, err := schtasks("/Create", "/TN", TaskName, "/XML", f.Name(), "/F"); err != nil {
-		return fmt.Errorf("não consegui criar a tarefa de inicialização: %v %s", err, out)
+		return i18n.Error("could not create the startup task: {0} {1}", err, out)
 	}
 	return nil
 }
 
-// Disable remove a tarefa (não é erro se ela não existir).
+// Disable removes the task (not an error if it does not exist).
 func Disable() error {
 	if !Enabled() {
 		return nil
 	}
 	if out, err := schtasks("/Delete", "/TN", TaskName, "/F"); err != nil {
-		return fmt.Errorf("não consegui remover a tarefa de inicialização: %v %s", err, out)
+		return i18n.Error("could not remove the startup task: {0} {1}", err, out)
 	}
 	return nil
 }
 
-// Enabled diz se a tarefa existe.
+// Enabled reports whether the task exists.
 func Enabled() bool {
 	_, err := schtasks("/Query", "/TN", TaskName)
 	return err == nil

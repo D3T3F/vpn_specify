@@ -11,7 +11,7 @@ import (
 	"vpn_specify/internal/tunnel"
 )
 
-// ---------- Proxy HTTP (CONNECT + requisições http:// normais) ----------
+// ---------- HTTP proxy (CONNECT + plain http:// requests) ----------
 
 type httpProxy struct {
 	tun     tunnel.Tunnel
@@ -55,7 +55,7 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !r.URL.IsAbs() {
-		http.Error(w, "vpn_specify: isto é um proxy HTTP", http.StatusBadRequest)
+		http.Error(w, "vpn_specify: this is an HTTP proxy", http.StatusBadRequest)
 		return
 	}
 	out := r.Clone(r.Context())
@@ -107,7 +107,7 @@ func (p *httpProxy) connect(w http.ResponseWriter, r *http.Request) {
 	defer up.Close()
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		http.Error(w, "hijack não suportado", http.StatusInternalServerError)
+		http.Error(w, "hijack not supported", http.StatusInternalServerError)
 		return
 	}
 	c, brw, err := hj.Hijack()

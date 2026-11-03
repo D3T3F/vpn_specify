@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,13 +22,14 @@ import (
 
 	"vpn_specify/internal/control"
 	"vpn_specify/internal/engine"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/launcher"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/store"
 	"vpn_specify/internal/update"
 )
 
-// ---------- agente ----------
+// ---------- agent ----------
 
 type showReq struct{ autoClose bool }
 
@@ -39,18 +41,18 @@ type agent struct {
 	mu         sync.Mutex
 	w          webview2.WebView
 	autoClose  bool
-	watch      map[string]bool // executáveis abertos pelo vpn_specify
+	watch      map[string]bool // executables opened by vpn_specify
 	lastLaunch time.Time
-	notice     string // mensagem para a tela (erros de abrir app etc.)
+	notice     string // message for the window (errors opening apps etc.)
 	showCh     chan showReq
 
 	upd    *updater
-	quitCh chan struct{} // atualização pronta: fechar o agente
+	quitCh chan struct{} // update ready: exit the agent
 	plan   *update.Plan  // aplicada depois de desconectar (veja runAgent)
 }
 
 func runAgent(show bool, launchID string, autostartNow bool) error {
-	runtime.LockOSThread() // a janela WebView2 precisa ficar sempre na mesma thread
+	runtime.LockOSThread() // the WebView2 window must always stay on the same thread
 
 	st, err := store.Open()
 	if err != nil {
@@ -58,7 +60,7 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 		return err
 	}
 	a := &agent{store: st, eng: engine.New(), logs: &logRing{}, watch: map[string]bool{}, showCh: make(chan showReq, 4), quitCh: make(chan struct{}, 1)}
-	// registrado primeiro, roda por último: depois de desconectar e liberar as portas
+	// registered first, runs last: after disconnecting and releasing the ports
 	defer a.runPlan()
 	a.upd = newUpdater(st, a.quitForUpdate, func(u string) error {
 		_, err := platform.StartUnelevated(filepath.Join(os.Getenv("WINDIR"), "explorer.exe"), windows.EscapeArg(u), "", nil)
@@ -77,7 +79,7 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 		"autostart": func(url.Values) error { go a.autostart(); return nil },
 	})
 	if err != nil {
-		// corrida: outra instância acabou de abrir
+		// race: another instance just started
 		if autostartNow {
 			return control.Call("autostart", nil)
 		}
@@ -89,7 +91,7 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 	defer stopControl()
 	defer a.eng.Disconnect()
 
-	log.Printf("vpn_specify iniciado (dados em %s)", st.Dir)
+	log.Printf("vpn_specify started (data in %s)", st.Dir)
 	if show {
 		a.showCh <- showReq{}
 	}
@@ -97,9 +99,9 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 		go a.launchFromShortcut(launchID)
 	}
 	go a.upd.autoCheck()
-	go func() { // a entrada do sistema acompanha o executável atual
+	go func() { // the system entry follows the current executable
 		if err := syncAutostart(st); err != nil {
-			log.Printf("inicialização com o sistema: %v", err)
+			log.Printf("start with the system: %v", err)
 		}
 	}()
 	if autostartNow {
@@ -122,8 +124,8 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 	}
 }
 
-// quitForUpdate fecha a janela e o agente; runAgent desconecta e então
-// aplica a atualização (o instalador espera este processo terminar).
+// quitForUpdate closes the window and the agent; runAgent disconnects and
+// then applies the update (the installer waits for this process to end).
 func (a *agent) quitForUpdate(plan *update.Plan) {
 	a.mu.Lock()
 	a.plan = plan
@@ -146,13 +148,13 @@ func (a *agent) runPlan() {
 		return
 	}
 	if err := plan.Run(); err != nil {
-		log.Printf("não consegui iniciar a atualização: %v", err)
-		platform.MessageBox("vpn_specify", "Não consegui iniciar a atualização: "+err.Error(), 0x10)
+		log.Printf("could not start the update: %v", err)
+		platform.MessageBox("vpn_specify", i18n.T("Could not start the update: {0}", err), 0x10)
 	}
 }
 
-// autostart: "vpn_specify autostart" (tarefa agendada no logon) abre os
-// apps marcados para iniciar com o sistema, sem mostrar a janela.
+// autostart: "vpn_specify autostart" (scheduled task at logon) opens the
+// apps marked to start with the system, without showing the window.
 func (a *agent) autostart() {
 	a.mu.Lock()
 	a.lastLaunch = time.Now()
@@ -182,7 +184,7 @@ func (a *agent) requestShow(autoClose bool) {
 	}
 }
 
-// shouldExit roda a cada 3s sem janela aberta: decide se a instância termina.
+// shouldExit runs every 3s with no window open: decides whether the instance exits.
 func (a *agent) shouldExit() bool {
 	a.mu.Lock()
 	windowOpen := a.w != nil
@@ -197,11 +199,11 @@ func (a *agent) shouldExit() bool {
 	}
 	st := a.eng.Status()
 	switch st.State {
-	case "conectando":
+	case engine.StateConnecting:
 		return false
-	case "conectado":
+	case engine.StateConnected:
 		if len(watch) == 0 {
-			log.Printf("janela fechada e nenhum app aberto pela VPN: desconectando")
+			log.Printf("window closed and no app opened through the VPN: disconnecting")
 			a.eng.Disconnect()
 			return true
 		}
@@ -209,7 +211,7 @@ func (a *agent) shouldExit() bool {
 			return false
 		}
 		if len(platform.RunningPIDs(watch)) == 0 {
-			log.Printf("os apps da VPN foram fechados: desconectando")
+			log.Printf("the VPN apps were closed: disconnecting")
 			a.eng.Disconnect()
 			return true
 		}
@@ -228,26 +230,26 @@ func (a *agent) setNotice(s string) {
 func (a *agent) launchFromShortcut(id string) {
 	app, ok := a.store.App(id)
 	if !ok {
-		platform.MessageBox("vpn_specify", "Este atalho aponta para um app que não existe mais no vpn_specify.", 0x10)
+		platform.MessageBox("vpn_specify", i18n.T("This shortcut points to an app that no longer exists in vpn_specify."), 0x10)
 		return
 	}
 	a.mu.Lock()
 	a.lastLaunch = time.Now()
 	windowOpen := a.w != nil
 	a.mu.Unlock()
-	needConnect := a.eng.Status().State != "conectado"
+	needConnect := a.eng.Status().State != engine.StateConnected
 	if needConnect && !windowOpen {
-		a.requestShow(true) // mostra o progresso enquanto conecta; fecha sozinha depois
+		a.requestShow(true) // shows the progress while connecting; closes by itself afterwards
 	}
 	if err := a.launchApp(app); err != nil {
-		log.Printf("erro ao abrir %s: %v", app.Name, err)
-		a.setNotice(fmt.Sprintf("Não consegui abrir %s: %v", app.Name, err))
+		log.Printf("error opening %s: %v", app.Name, err)
+		a.setNotice(i18n.T("Could not open {0}: {1}", app.Name, err))
 		a.mu.Lock()
 		a.autoClose = false
 		hasWindow := a.w != nil
 		a.mu.Unlock()
 		if !hasWindow {
-			platform.MessageBox("vpn_specify", fmt.Sprintf("Não consegui abrir %s:\n\n%v", app.Name, err), 0x10)
+			platform.MessageBox("vpn_specify", i18n.T("Could not open {0}:", app.Name)+"\n\n"+err.Error(), 0x10)
 		}
 		return
 	}
@@ -261,16 +263,16 @@ func (a *agent) launchFromShortcut(id string) {
 	}
 }
 
-// launchApp conecta (se preciso), liga a captura e abre o app sem elevação.
+// launchApp connects (if needed), starts the capture and opens the app unelevated.
 func (a *agent) launchApp(app store.AppEntry) error {
 	a.mu.Lock()
 	a.lastLaunch = time.Now()
 	a.mu.Unlock()
 	st := a.eng.Status()
-	if (st.State == "conectado" || st.State == "conectando") && st.Config != app.Config {
-		return fmt.Errorf("a VPN %q está ativa e %s usa %q; desconecte antes", st.Config, app.Name, app.Config)
+	if (st.State == engine.StateConnected || st.State == engine.StateConnecting) && st.Config != app.Config {
+		return i18n.Error("the VPN {0} is active and {1} uses {2}; disconnect first", strconv.Quote(st.Config), app.Name, strconv.Quote(app.Config))
 	}
-	if st.State != "conectado" {
+	if st.State != engine.StateConnected {
 		path, opts, err := a.store.ConfigFor(app.Config)
 		if err != nil {
 			return err
@@ -315,7 +317,7 @@ func (a *agent) launchApp(app store.AppEntry) error {
 	}
 	a.lastLaunch = time.Now()
 	a.mu.Unlock()
-	log.Printf("%s aberto na VPN (pid %d, modo %s)", app.Name, pid, app.Mode)
+	log.Printf("%s opened in the VPN (pid %d, %s mode)", app.Name, pid, app.Mode)
 	return nil
 }
 
@@ -323,14 +325,14 @@ func (a *agent) waitConnected(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		switch st := a.eng.Status(); st.State {
-		case "conectado":
+		case engine.StateConnected:
 			return nil
-		case "erro":
+		case engine.StateError:
 			return errors.New(st.Error)
-		case "desconectado":
-			return errors.New("conexão cancelada")
+		case engine.StateDisconnected:
+			return engine.ErrCanceled
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return errors.New("tempo esgotado conectando")
+	return i18n.Error("timed out connecting")
 }

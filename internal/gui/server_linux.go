@@ -7,7 +7,6 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,29 +20,30 @@ import (
 	"sync"
 	"time"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/launcher"
 )
 
-// Janela no Linux
+// Window on Linux
 //
-// No Windows a página roda num WebView2 e as funções vs* são ligadas
-// direto ao Go. No Linux a mesma página é servida por um servidor HTTP em
-// 127.0.0.1 (porta aleatória, protegido por um token aleatório) e aberta
-// como janela de app de um navegador Chromium (--app: sem abas nem barra
-// de endereço) ou, sem nenhum, no navegador padrão. Um script injetado na
-// página transforma cada vsX(...) num POST /rpc/vsX, e uma conexão SSE
-// (/events) diz se a janela está aberta e permite mandá-la fechar.
+// On Windows the page runs in WebView2 and the vs* functions are bound
+// straight to Go. On Linux the same page is served by an HTTP server on
+// 127.0.0.1 (random port, protected by a random token) and opened as an app
+// window of a Chromium browser (--app: no tabs or address bar) or, without
+// one, in the default browser. A script injected in the page turns each
+// vsX(...) into a POST /rpc/vsX, and an SSE connection (/events) tells
+// whether the window is open and lets us ask it to close.
 
 type uiServer struct {
 	token    string
-	base     string // http://127.0.0.1:porta
+	base     string // http://127.0.0.1:port
 	handlers map[string]reflect.Value
 
 	mu        sync.Mutex
 	clients   map[chan string]bool
-	lastGone  time.Time // quando a última janela desconectou
-	openedAt  time.Time // quando pedimos para abrir uma janela
-	connected bool      // alguma janela conectou desde o último openedAt
+	lastGone  time.Time // when the last window disconnected
+	openedAt  time.Time // when we asked to open a window
+	connected bool      // a window connected since the last openedAt
 	icons     map[string]bool
 }
 
@@ -57,7 +57,7 @@ func newUIServer(handlers map[string]any) (*uiServer, error) {
 	for name, f := range handlers {
 		v := reflect.ValueOf(f)
 		if v.Kind() != reflect.Func {
-			return nil, fmt.Errorf("%s não é função", name)
+			return nil, fmt.Errorf("%s is not a function", name)
 		}
 		s.handlers[name] = v
 	}
@@ -78,13 +78,13 @@ func newUIServer(handlers map[string]any) (*uiServer, error) {
 
 func (s *uiServer) pageURL() string { return s.base + "/?t=" + s.token }
 
-// guard recusa nomes de host diferentes (DNS rebinding: uma página da
-// internet apontando um domínio para 127.0.0.1) e pedidos sem o token.
+// guard refuses other host names (DNS rebinding: an internet page pointing a
+// domain at 127.0.0.1) and requests without the token.
 func (s *uiServer) guard(next http.Handler) http.Handler {
 	host := strings.TrimPrefix(s.base, "http://")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host != host {
-			http.Error(w, "proibido", http.StatusForbidden)
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		tok := r.Header.Get("X-Token")
@@ -92,7 +92,7 @@ func (s *uiServer) guard(next http.Handler) http.Handler {
 			tok = r.URL.Query().Get("t")
 		}
 		if subtle.ConstantTimeCompare([]byte(tok), []byte(s.token)) != 1 {
-			http.Error(w, "proibido", http.StatusForbidden)
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -126,8 +126,8 @@ func (s *uiServer) bridgeScript() string {
       let r;
       try {
         r = await fetch("/rpc/" + name, { method: "POST", headers: { "X-Token": token, "Content-Type": "application/json" }, body: JSON.stringify(args) });
-      } catch (e) { throw "o vpn_specify não está respondendo (foi fechado?)"; }
-      const j = await r.json().catch(() => ({ error: "resposta inválida (HTTP " + r.status + ")" }));
+      } catch (e) { throw t("vpn_specify is not responding (was it closed?)"); }
+      const j = await r.json().catch(() => ({ error: t("invalid reply (HTTP {0})", r.status) }));
       if (j.error !== undefined) throw j.error;
       return j.result;
     };
@@ -166,35 +166,35 @@ func (s *uiServer) rpc(w http.ResponseWriter, r *http.Request) {
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
 
-// call decodifica os argumentos JSON nos tipos da função e devolve o
-// resultado, como o Bind do WebView2: func(...) [T] [error].
+// call decodes the JSON arguments into the function's types and returns the
+// result, like WebView2's Bind: func(...) [T] [error].
 func (s *uiServer) call(name string, body []byte) (res any, err error) {
 	f, ok := s.handlers[name]
 	if !ok {
-		return nil, fmt.Errorf("função desconhecida: %s", name)
+		return nil, fmt.Errorf("unknown function: %s", name)
 	}
 	t := f.Type()
 	var raw []json.RawMessage
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &raw); err != nil {
-			return nil, fmt.Errorf("%s: argumentos inválidos: %w", name, err)
+			return nil, fmt.Errorf("%s: invalid arguments: %w", name, err)
 		}
 	}
 	if len(raw) != t.NumIn() {
-		return nil, fmt.Errorf("%s: esperava %d argumentos, veio %d", name, t.NumIn(), len(raw))
+		return nil, fmt.Errorf("%s: expected %d arguments, got %d", name, t.NumIn(), len(raw))
 	}
 	in := make([]reflect.Value, t.NumIn())
 	for i := range in {
 		v := reflect.New(t.In(i))
 		if err := json.Unmarshal(raw[i], v.Interface()); err != nil {
-			return nil, fmt.Errorf("%s: argumento %d inválido: %w", name, i+1, err)
+			return nil, fmt.Errorf("%s: invalid argument %d: %w", name, i+1, err)
 		}
 		in[i] = v.Elem()
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			log.Printf("erro interno em %s: %v", name, p)
-			err = fmt.Errorf("erro interno em %s", name)
+			log.Printf("internal error in %s: %v", name, p)
+			err = fmt.Errorf("internal error in %s", name)
 		}
 	}()
 	out := f.Call(in)
@@ -213,7 +213,7 @@ func (s *uiServer) call(name string, body []byte) (res any, err error) {
 func (s *uiServer) events(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "sem streaming", http.StatusInternalServerError)
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -248,8 +248,8 @@ func (s *uiServer) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// allowIcon libera um arquivo de ícone para a página (só os que o próprio
-// vpn_specify encontrou, nunca um caminho qualquer).
+// allowIcon allows an icon file for the page (only the ones vpn_specify
+// itself found, never an arbitrary path).
 func (s *uiServer) allowIcon(p string) {
 	if p == "" {
 		return
@@ -276,8 +276,8 @@ func (s *uiServer) icon(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, p)
 }
 
-// isOpen: há uma janela conectada, uma acabou de recarregar, ou pedimos
-// para abrir uma e ela ainda está carregando.
+// isOpen: a window is connected, one has just reloaded, or we asked to open
+// one and it is still loading.
 func (s *uiServer) isOpen() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -298,14 +298,14 @@ func (s *uiServer) broadcast(ev string) {
 	}
 }
 
-// appBrowsers: navegadores que abrem uma página como janela de app.
+// appBrowsers: browsers that open a page as an app window.
 var appBrowsers = []string{
 	"google-chrome-stable", "google-chrome", "chromium", "chromium-browser",
 	"microsoft-edge-stable", "microsoft-edge", "brave-browser", "vivaldi-stable",
 }
 
-// openWindow abre a janela. Se já houver uma, ela é fechada e outra é
-// aberta: é o jeito confiável de trazê-la para a frente.
+// openWindow opens the window. If one already exists, it is closed and
+// another one opened: the reliable way to bring it to the front.
 func (s *uiServer) openWindow() error {
 	s.mu.Lock()
 	hadClients := len(s.clients) > 0
@@ -330,15 +330,21 @@ func (s *uiServer) openWindow() error {
 			"--window-size=1000,760", "--disable-features=Translate",
 		}, "", nil)
 		if err == nil {
-			log.Printf("janela aberta com %s", name)
+			log.Printf("window opened with %s", name)
 			return nil
 		}
 	}
 	if err := openWithDefault(url); err == nil {
-		log.Printf("janela aberta no navegador padrão (instale o Chromium ou o Chrome para ter uma janela própria)")
+		log.Printf("window opened in the default browser (install Chromium or Chrome to get a window of its own)")
 		return nil
 	}
-	return errors.New("não achei um navegador para mostrar a janela; abra este endereço: " + url)
+	return i18n.Error("could not find a browser to show the window; open this address: {0}", url)
+}
+
+// Messages used by the bridge script above (marked for the catalogs).
+var _ = []string{
+	i18n.N("vpn_specify is not responding (was it closed?)"),
+	i18n.N("invalid reply (HTTP {0})"),
 }
 
 func hasDisplay() bool { return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" }

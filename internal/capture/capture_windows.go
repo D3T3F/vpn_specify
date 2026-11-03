@@ -17,26 +17,32 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/tunnel"
 )
 
-// Captura por processo (-capture discord.exe)
+// Per-process capture (-capture discord.exe)
 //
-// O WinDivert entrega ao vpn_specify todo pacote IP de saída do sistema.
-// Para cada pacote decidimos, pela porta local, se ele é de um processo
-// capturado (tabelas de conexões do Windows):
+// WinDivert hands vpn_specify every outgoing IP packet of the system. For each
+// packet we decide, by its local port, whether it belongs to a captured
+// process (Windows connection tables):
 //
-//   - Não é: o pacote volta inalterado para a rede.
-//   - UDP capturado (voz, jogos, DNS): o pacote é descartado e o conteúdo
-//     sai por um socket UDP dentro da VPN. As respostas viram pacotes IP
-//     "de entrada" injetados de volta, como se viessem da internet.
-//   - TCP capturado: o pacote é "refletido" para um proxy transparente
-//     local (troca origem/destino e aponta para a porta do proxy). O proxy
-//     sabe o destino original pela tabela NAT e abre a conexão pela VPN.
-//   - IPv6 capturado: descartado, para o app usar IPv4 (sem vazar fora da VPN).
+//   - It does not: the packet goes back to the network unchanged.
+//   - Captured UDP (voice, games, DNS): the packet is dropped and its payload
+//     leaves through a UDP socket inside the VPN. Replies become "inbound" IP
+//     packets injected back, as if they came from the internet.
+//   - Captured TCP: the packet is "reflected" to a local transparent proxy
+//     (source/destination swapped, pointing at the proxy port). The proxy
+//     learns the original destination from the NAT table and connects
+//     through the VPN.
+//   - Captured IPv6: dropped, so the app falls back to IPv4 (no leak outside
+//     the VPN).
 
-const captureRule = "vpn_specify captura"
+const captureRule = "vpn_specify capture"
+
+// legacyCaptureRule is the rule name used by versions before 1.1 (removed too).
+const legacyCaptureRule = "vpn_specify captura"
 
 type tcpFlow struct {
 	local, remote [4]byte
@@ -70,7 +76,7 @@ type captureEngine struct {
 	proxyPort uint16
 
 	mu       sync.Mutex
-	tcp      map[uint16]*tcpFlow // chave: porta local do app
+	tcp      map[uint16]*tcpFlow // key: the app's local port
 	udp      map[uint16]*udpFlow
 	owners   map[string]ownerEntry
 	stop     chan struct{}
@@ -94,7 +100,7 @@ func normalizeExeNames(list []string) map[string]bool {
 
 func Start(tun tunnel.Tunnel, exeNames []string, verbose bool) (Controller, error) {
 	if !platform.IsElevated() {
-		return nil, errors.New("-capture precisa de um terminal como Administrador (usa o driver WinDivert)")
+		return nil, i18n.Error("-capture needs a terminal running as Administrator (it uses the WinDivert driver)")
 	}
 	if err := loadWinDivert(); err != nil {
 		return nil, err
@@ -127,18 +133,18 @@ func Start(tun tunnel.Tunnel, exeNames []string, verbose bool) (Controller, erro
 	}
 	go e.janitor()
 
-	log.Printf("captura ativa para: %s (TCP, UDP; IPv6 bloqueado)", strings.Join(e.Names(), ", "))
+	log.Printf("capture active for: %s (TCP, UDP; IPv6 blocked)", strings.Join(e.Names(), ", "))
 	e.resetRunning(e.names)
 	return e, nil
 }
 
-// resetRunning derruba as conexões TCP de processos que já estavam abertos,
-// para reconectarem (agora capturados).
+// resetRunning drops the TCP connections of processes that were already
+// running, so they reconnect (now captured).
 func (e *captureEngine) resetRunning(names map[string]bool) {
 	if running := platform.RunningPIDs(names); len(running) > 0 {
 		n := resetTCPConnections(running)
-		log.Printf("aviso: %d processo(s) já estavam abertos; %d conexão(ões) TCP antigas foram derrubadas para reconectarem pela VPN. "+
-			"Se algo continuar fora da VPN, feche e abra o app de novo.", len(running), n)
+		log.Printf("warning: %d process(es) were already running; %d old TCP connection(s) were dropped so they reconnect through the VPN. "+
+			"If something stays outside the VPN, close and reopen the app.", len(running), n)
 	}
 }
 
@@ -152,11 +158,11 @@ func (e *captureEngine) AddNames(list []string) {
 		}
 	}
 	if len(added) > 0 {
-		e.owners = map[string]ownerEntry{} // reavalia portas com a lista nova
+		e.owners = map[string]ownerEntry{} // re-evaluate ports with the new list
 	}
 	e.mu.Unlock()
 	if len(added) > 0 {
-		log.Printf("captura: adicionado %s", strings.Join(sortedKeys(added), ", "))
+		log.Printf("capture: added %s", strings.Join(sortedKeys(added), ", "))
 		e.resetRunning(added)
 	}
 }
@@ -178,7 +184,7 @@ func (e *captureEngine) Stop() {
 		}
 		e.mu.Unlock()
 		e.deleteFirewallRule()
-		log.Printf("captura encerrada")
+		log.Printf("capture stopped")
 	})
 }
 
@@ -191,23 +197,25 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
-// O pacote refletido chega ao proxy como uma conexão de entrada vinda do
-// IP remoto; sem regra, o Firewall do Windows bloqueia.
+// The reflected packet reaches the proxy as an inbound connection from the
+// remote IP; without a rule, Windows Firewall blocks it.
 func (e *captureEngine) addFirewallRule() {
 	exe, _ := os.Executable()
 	e.deleteFirewallRule()
 	out, err := exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name="+captureRule,
 		"dir=in", "action=allow", "program="+exe, "protocol=TCP", "localport="+strconv.Itoa(int(e.proxyPort)), "enable=yes").CombinedOutput()
 	if err != nil {
-		log.Printf("aviso: não consegui criar a regra de firewall (%v): %s", err, strings.TrimSpace(string(out)))
+		log.Printf("warning: could not create the firewall rule (%v): %s", err, strings.TrimSpace(string(out)))
 	}
 }
 
 func (e *captureEngine) deleteFirewallRule() {
-	_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+captureRule).Run()
+	for _, name := range []string{captureRule, legacyCaptureRule} {
+		_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+name).Run()
+	}
 }
 
-// isTarget diz se a porta local pertence a um processo capturado.
+// isTarget reports whether the local port belongs to a captured process.
 func (e *captureEngine) isTarget(tcp, v6 bool, port uint16) (bool, string) {
 	key := fmt.Sprint(tcp, v6, port)
 	now := time.Now()
@@ -259,7 +267,7 @@ func (e *captureEngine) worker() {
 	}
 }
 
-// handle devolve true se o pacote (possivelmente modificado) deve ser enviado.
+// handle returns true if the (possibly modified) packet must be sent.
 func (e *captureEngine) handle(pkt []byte, addr *divertAddr) bool {
 	if len(pkt) < 20 {
 		return true
@@ -271,11 +279,11 @@ func (e *captureEngine) handle(pkt []byte, addr *divertAddr) bool {
 	if ihl < 20 || len(pkt) < ihl+8 {
 		return true
 	}
-	if binary.BigEndian.Uint16(pkt[6:8])&0x3fff != 0 { // fragmento: deixa passar
+	if binary.BigEndian.Uint16(pkt[6:8])&0x3fff != 0 { // fragment: let it through
 		return true
 	}
 	dst := pkt[16:20]
-	if dst[0] >= 224 || (dst[0] == 255 && dst[1] == 255) { // multicast/broadcast: rede local
+	if dst[0] >= 224 || (dst[0] == 255 && dst[1] == 255) { // multicast/broadcast: local network
 		return true
 	}
 	switch pkt[9] {
@@ -297,7 +305,7 @@ func (e *captureEngine) handleIPv6(pkt []byte) bool {
 	}
 	sport := binary.BigEndian.Uint16(pkt[40:42])
 	if target, _ := e.isTarget(next == 6, true, sport); target {
-		return false // bloqueia: o app cai para IPv4, que vai pela VPN
+		return false // block: the app falls back to IPv4, which goes through the VPN
 	}
 	return true
 }

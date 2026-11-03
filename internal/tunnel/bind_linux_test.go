@@ -11,15 +11,15 @@ import (
 	"testing"
 )
 
-// TestBindToTunnelInterface cria uma interface tun de teste (precisa de root)
-// e confere que um socket preso a ela sai com o IP dela, mesmo havendo uma
-// rota padrão normal: é isso que manda o tráfego do proxy pelo OpenVPN no Linux.
+// TestBindToTunnelInterface creates a test tun interface (needs root) and
+// checks that a socket bound to it leaves with its IP, even with a normal
+// default route: that is what sends the proxy traffic through OpenVPN on Linux.
 func TestBindToTunnelInterface(t *testing.T) {
 	if os.Geteuid() != 0 {
-		t.Skip("precisa de root (cria uma interface tun)")
+		t.Skip("needs root (creates a tun interface)")
 	}
 	if _, err := exec.LookPath("ip"); err != nil {
-		t.Skip("comando ip não encontrado")
+		t.Skip("the ip command was not found")
 	}
 	const dev, addr = "vstest0", "10.199.77.2"
 	ipCmd := func(args ...string) {
@@ -36,13 +36,13 @@ func TestBindToTunnelInterface(t *testing.T) {
 
 	name, err := prepareTunnelInterface(net.ParseIP(addr))
 	if err != nil || name != dev {
-		t.Fatalf("prepareTunnelInterface = %q, %v; quero %q", name, err, dev)
+		t.Fatalf("prepareTunnelInterface = %q, %v; want %q", name, err, dev)
 	}
 	if b, _ := os.ReadFile("/proc/sys/net/ipv4/conf/" + dev + "/rp_filter"); strings.TrimSpace(string(b)) != "2" {
-		t.Errorf("rp_filter = %q; quero 2", b)
+		t.Errorf("rp_filter = %q; want 2", b)
 	}
 
-	// UDP "conectado" não manda nada, mas o kernel já escolhe rota e origem.
+	// A "connected" UDP socket sends nothing, but the kernel already picks route and source.
 	d := net.Dialer{Control: bindControl(dev)}
 	c, err := d.DialContext(context.Background(), "udp4", "1.1.1.1:53")
 	if err != nil {
@@ -50,6 +50,6 @@ func TestBindToTunnelInterface(t *testing.T) {
 	}
 	defer c.Close()
 	if got := c.LocalAddr().(*net.UDPAddr).IP.String(); got != addr {
-		t.Errorf("origem = %s; quero %s (o socket não saiu pela interface do túnel)", got, addr)
+		t.Errorf("source = %s; want %s (the socket did not leave through the tunnel interface)", got, addr)
 	}
 }

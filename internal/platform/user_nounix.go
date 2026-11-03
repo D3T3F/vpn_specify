@@ -7,8 +7,8 @@ import (
 	"os/exec"
 )
 
-// SudoUser só existe em sistemas Unix; no Windows InvokingUser é sempre nil
-// (lá os apps são abertos sem elevação por StartUnelevated).
+// SudoUser only exists on Unix systems; on Windows InvokingUser is always nil
+// (apps are started unelevated with StartUnelevated there).
 type SudoUser struct{ Home string }
 
 func InvokingUser() *SudoUser { return nil }

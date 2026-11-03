@@ -9,15 +9,18 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
+
+	"vpn_specify/internal/i18n"
 
 	"golang.org/x/net/dns/dnsmessage"
 )
 
-// Cliente DNS mínimo (registros A) cujas consultas saem por um dial
-// customizado, ou seja, por dentro da VPN. Evita vazar os nomes acessados
-// para o DNS normal do computador.
+// Minimal DNS client (A records) whose queries go out through a custom dial,
+// that is, inside the VPN. Keeps the visited names from leaking to the
+// computer's normal DNS.
 
 type dialFunc func(ctx context.Context, network, address string) (net.Conn, error)
 
@@ -29,12 +32,12 @@ func lookupA(ctx context.Context, servers []netip.Addr, name string, dial dialFu
 			return ips, nil
 		}
 		if err == nil {
-			err = fmt.Errorf("%s: sem endereço IPv4", name)
+			err = i18n.Error("{0}: no IPv4 address", name)
 		}
 		lastErr = err
 	}
 	if lastErr == nil {
-		lastErr = errors.New("nenhum servidor DNS configurado")
+		lastErr = i18n.Error("no DNS server configured")
 	}
 	return nil, lastErr
 }
@@ -46,7 +49,7 @@ func queryA(ctx context.Context, server, name string, dial dialFunc) ([]net.IP, 
 	}
 	n, err := dnsmessage.NewName(fq)
 	if err != nil {
-		return nil, fmt.Errorf("nome inválido %q", name)
+		return nil, i18n.Error("invalid name {0}", strconv.Quote(name))
 	}
 	id := uint16(rand.Uint32())
 	q := dnsmessage.Message{
@@ -68,14 +71,14 @@ func queryA(ctx context.Context, server, name string, dial dialFunc) ([]net.IP, 
 		return nil, fmt.Errorf("DNS %s: %w", server, err)
 	}
 	if resp.ID != id {
-		return nil, errors.New("resposta DNS com ID errado")
+		return nil, errors.New("DNS reply with the wrong ID")
 	}
 	switch resp.RCode {
 	case dnsmessage.RCodeSuccess:
 	case dnsmessage.RCodeNameError:
-		return nil, fmt.Errorf("%s: domínio não encontrado", name)
+		return nil, i18n.Error("{0}: domain not found", name)
 	default:
-		return nil, fmt.Errorf("%s: erro DNS %v", name, resp.RCode)
+		return nil, i18n.Error("{0}: DNS error {1}", name, resp.RCode)
 	}
 	var ips []net.IP
 	for _, a := range resp.Answers {

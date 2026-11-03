@@ -4,7 +4,7 @@ package tunnel
 
 import "errors"
 
-// RunOpenVPNHelper só é usado no Linux (veja helper_linux.go).
+// RunOpenVPNHelper is only used on Linux (see helper_linux.go).
 func RunOpenVPNHelper(args []string) error {
-	return errors.New("openvpn-helper só existe no Linux")
+	return errors.New("openvpn-helper only exists on Linux")
 }

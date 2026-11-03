@@ -7,18 +7,19 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"vpn_specify/internal/i18n"
 )
 
-// Protect/Unprotect guardam senhas fora do Windows (lá é o DPAPI).
+// Protect/Unprotect store passwords outside Windows (DPAPI is used there).
 //
-// A senha é cifrada (AES-256-GCM) com uma chave aleatória deste usuário em
-// ~/.local/share/vpn_specify/secret.key (permissão 0600), separada do
-// settings.json em ~/.config. Copiar só o settings.json não revela a senha;
-// a proteção da chave é a mesma das chaves SSH: as permissões do arquivo.
+// The password is encrypted (AES-256-GCM) with a random per-user key in
+// ~/.local/share/vpn_specify/secret.key (mode 0600), kept apart from
+// settings.json in ~/.config. Copying only settings.json does not reveal the
+// password; the key is protected like SSH keys are: by file permissions.
 
 const secretPrefix = "v1:"
 
@@ -44,7 +45,7 @@ func secretKey(create bool) ([]byte, error) {
 		return k, nil
 	}
 	if !create {
-		return nil, errors.New("a chave das senhas (" + p + ") não existe mais; salve as credenciais de novo")
+		return nil, i18n.Error("the password key ({0}) no longer exists; save the credentials again", p)
 	}
 	k = make([]byte, 32)
 	if _, err := rand.Read(k); err != nil {
@@ -82,7 +83,7 @@ func Protect(s string) (string, error) {
 
 func Unprotect(enc string) (string, error) {
 	if !strings.HasPrefix(enc, secretPrefix) {
-		return "", errors.New("senha salva em outro sistema (ex.: DPAPI do Windows); salve as credenciais de novo")
+		return "", i18n.Error("password saved on another system (e.g. Windows DPAPI); save the credentials again")
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(enc, secretPrefix))
 	if err != nil {
@@ -93,11 +94,11 @@ func Unprotect(enc string) (string, error) {
 		return "", err
 	}
 	if len(raw) < g.NonceSize() {
-		return "", errors.New("senha salva corrompida")
+		return "", i18n.Error("the saved password is corrupted")
 	}
 	out, err := g.Open(nil, raw[:g.NonceSize()], raw[g.NonceSize():], nil)
 	if err != nil {
-		return "", errors.New("não consegui decifrar a senha salva (a chave mudou?); salve as credenciais de novo")
+		return "", i18n.Error("could not decrypt the saved password (did the key change?); save the credentials again")
 	}
 	return string(out), nil
 }

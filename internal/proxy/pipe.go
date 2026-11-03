@@ -5,7 +5,7 @@ import (
 	"net"
 )
 
-// Pipe copia nos dois sentidos até ambos terminarem.
+// Pipe copies in both directions until both sides finish.
 func Pipe(client net.Conn, clientR io.Reader, up net.Conn) {
 	done := make(chan struct{}, 2)
 	go func() {

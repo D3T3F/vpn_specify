@@ -1,4 +1,4 @@
-// Package engine junta túnel, proxies locais, encaminhamentos e captura numa
-// conexão só, com estado observável. É usado pelo comando "up" e pela
-// interface gráfica.
+// Package engine combines tunnel, local proxies, port forwards and capture
+// into a single connection with observable state. Used by the "up" command
+// and by the graphical interface.
 package engine

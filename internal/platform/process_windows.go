@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ProcessName devolve o nome do executável em minúsculas (ex.: "discord.exe").
+// ProcessName returns the lower-case executable name (e.g. "discord.exe").
 func ProcessName(pid uint32) string {
 	if p := ProcessPath(pid); p != "" {
 		return strings.ToLower(filepath.Base(p))
@@ -18,8 +18,8 @@ func ProcessName(pid uint32) string {
 	return ""
 }
 
-// ProcessPath devolve o caminho completo do executável do processo ("" se
-// não der para consultar).
+// ProcessPath returns the full path of the process executable ("" if it
+// cannot be queried).
 func ProcessPath(pid uint32) string {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
@@ -34,7 +34,7 @@ func ProcessPath(pid uint32) string {
 	return windows.UTF16ToString(buf[:n])
 }
 
-// RunningPIDs lista os PIDs cujo executável está em names.
+// RunningPIDs lists the PIDs whose executable is in names.
 func RunningPIDs(names map[string]bool) map[uint32]string {
 	out := map[uint32]string{}
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)

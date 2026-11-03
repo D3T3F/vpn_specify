@@ -1,13 +1,13 @@
-// Package autostart registra o vpn_specify para rodar ao entrar na conta,
-// com "vpn_specify autostart", que abre na VPN os apps marcados para
-// iniciar com o sistema. Há uma entrada só, criada quando algum app é
-// marcado e removida quando nenhum está:
-//   - Windows: tarefa agendada "vpn_specify\Iniciar apps na VPN" no logon do
-//     usuário, com privilégio máximo (o vpn_specify precisa de Administrador;
-//     a tarefa evita o UAC a cada logon);
-//   - Linux: ~/.config/autostart/vpn_specify.desktop (padrão XDG, seguido
-//     por GNOME, KDE, XFCE, Cinnamon, MATE...).
+// Package autostart registers vpn_specify to run when the user signs in,
+// with "vpn_specify autostart", which opens in the VPN the apps marked to
+// start with the system. There is a single entry, created when some app is
+// marked and removed when none is:
+//   - Windows: scheduled task "vpn_specify\Start apps in VPN" at the user's
+//     logon, with highest privileges (vpn_specify needs Administrator; the
+//     task avoids a UAC prompt at every logon);
+//   - Linux: ~/.config/autostart/vpn_specify.desktop (XDG standard, followed
+//     by GNOME, KDE, XFCE, Cinnamon, MATE...).
 package autostart
 
-// Arg é o argumento que a entrada passa para o vpn_specify.
+// Arg is the argument the entry passes to vpn_specify.
 const Arg = "autostart"

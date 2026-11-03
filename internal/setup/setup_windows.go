@@ -3,8 +3,6 @@
 package setup
 
 import (
-	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -15,12 +13,13 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/version"
 )
 
-// RunningInstances lista os PIDs do vpn_specify em execução a partir da
-// pasta dir (exceto este processo). Cópias em outras pastas não atrapalham.
+// RunningInstances lists the PIDs of vpn_specify running from the dir folder
+// (except this process). Copies in other folders do not get in the way.
 func RunningInstances(dir string) []uint32 {
 	var out []uint32
 	for pid := range platform.RunningPIDs(map[string]bool{MainExe: true, CLIExe: true}) {
@@ -29,18 +28,17 @@ func RunningInstances(dir string) []uint32 {
 		}
 		p := platform.ProcessPath(pid)
 		if p == "" || strings.EqualFold(filepath.Dir(p), filepath.Clean(dir)) {
-			out = append(out, pid) // sem acesso ao caminho: melhor assumir que é desta pasta
+			out = append(out, pid) // path not accessible: better assume it is from this folder
 		}
 	}
 	return out
 }
 
-var errRunning = errors.New("o vpn_specify está aberto. Abra a janela dele, clique em Desconectar e feche-a " +
-	"(os apps abertos pela VPN também precisam estar fechados); depois tente de novo")
+var errRunning = i18n.Sentinel("vpn_specify is open. Open its window, click Disconnect and close it (the apps opened through the VPN must be closed too); then try again")
 
-// Install copia os arquivos de payload (raiz = conteúdo da pasta de
-// instalação), cria os atalhos e registra a desinstalação. progress recebe
-// mensagens curtas para a tela.
+// Install copies the payload files (root = content of the installation
+// folder), creates the shortcuts and registers the uninstaller. progress
+// receives short messages for the window.
 func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 	dir, err := NormalizeDir(o.Dir)
 	if err != nil {
@@ -50,7 +48,7 @@ func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 		return "", errRunning
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("não consegui criar %s: %w", dir, err)
+		return "", i18n.Wrap(err, "could not create {0}", dir)
 	}
 
 	var total int64
@@ -58,7 +56,7 @@ func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		progress("Copiando " + p + "…")
+		progress(i18n.T("Copying {0}…", p))
 		n, err := copyFile(payload, p, filepath.Join(dir, filepath.FromSlash(p)))
 		total += n
 		return err
@@ -67,34 +65,34 @@ func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(dir, MainExe)); err != nil {
-		return "", errors.New("o instalador não contém o vpn_specify.exe (pacote incompleto)")
+		return "", i18n.Error("the installer does not contain vpn_specify.exe (incomplete package)")
 	}
 
 	exe := filepath.Join(dir, MainExe)
-	desc := "vpn_specify: VPN só para os apps escolhidos"
+	desc := i18n.T("vpn_specify: VPN only for the apps you choose")
 	if o.StartMenu {
-		progress("Criando atalho no Menu Iniciar…")
+		progress(i18n.T("Creating the Start menu shortcut…"))
 		if err := platform.CreateShortcut(filepath.Join(platform.StartMenuDir(), shortcutName), exe, "", dir, exe+",0", desc); err != nil {
-			return "", fmt.Errorf("atalho do Menu Iniciar: %w", err)
+			return "", i18n.Wrap(err, "Start menu shortcut")
 		}
 	}
 	if o.Desktop {
-		progress("Criando atalho na Área de Trabalho…")
+		progress(i18n.T("Creating the desktop shortcut…"))
 		if err := platform.CreateShortcut(filepath.Join(platform.DesktopDir(), shortcutName), exe, "", dir, exe+",0", desc); err != nil {
-			return "", fmt.Errorf("atalho da Área de Trabalho: %w", err)
+			return "", i18n.Wrap(err, "desktop shortcut")
 		}
 	}
 
-	progress("Registrando em Aplicativos instalados…")
+	progress(i18n.T("Registering in Installed apps…"))
 	if err := register(dir, total); err != nil {
-		return "", fmt.Errorf("registro da desinstalação: %w", err)
+		return "", i18n.Wrap(err, "uninstall registration")
 	}
-	progress("Pronto.")
+	progress(i18n.T("Done."))
 	return dir, nil
 }
 
-// copyFile grava num arquivo temporário e troca no fim, para não deixar um
-// .exe pela metade se algo falhar.
+// copyFile writes to a temporary file and swaps it in at the end, so a
+// half-written .exe is never left behind if something fails.
 func copyFile(src fs.FS, name, dst string) (int64, error) {
 	in, err := src.Open(name)
 	if err != nil {
@@ -104,10 +102,10 @@ func copyFile(src fs.FS, name, dst string) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return 0, err
 	}
-	tmp := dst + ".novo"
+	tmp := dst + ".new"
 	out, err := os.Create(tmp)
 	if err != nil {
-		return 0, fmt.Errorf("não consegui gravar %s: %w", dst, err)
+		return 0, i18n.Wrap(err, "could not write {0}", dst)
 	}
 	n, err := io.Copy(out, in)
 	if cerr := out.Close(); err == nil {
@@ -119,7 +117,7 @@ func copyFile(src fs.FS, name, dst string) (int64, error) {
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		os.Remove(tmp)
-		return 0, fmt.Errorf("não consegui substituir %s (está em uso?): %w", dst, err)
+		return 0, i18n.Wrap(err, "could not replace {0} (is it in use?)", dst)
 	}
 	return n, nil
 }
@@ -151,7 +149,7 @@ func register(dir string, size int64) error {
 	return nil
 }
 
-// InstalledDir devolve a pasta registrada por uma instalação anterior.
+// InstalledDir returns the folder registered by a previous installation.
 func InstalledDir() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, uninstallKey, registry.QUERY_VALUE)
 	if err != nil {
@@ -162,8 +160,9 @@ func InstalledDir() string {
 	return v
 }
 
-// UpdateOptions: as opções da instalação atual, para atualizar sem mudar
-// nada (mesma pasta; só recria os atalhos que ainda existem).
+// UpdateOptions: the options of the current installation, to update
+// without changing anything (same folder; only recreates shortcuts that
+// still exist).
 func UpdateOptions() Options {
 	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
 	return Options{
@@ -173,8 +172,8 @@ func UpdateOptions() Options {
 	}
 }
 
-// Extract só copia os arquivos para dir (atualização de cópia portátil:
-// sem registro nem atalhos).
+// Extract only copies the files into dir (portable copy update: no registry
+// and no shortcuts).
 func Extract(payload fs.FS, dir string, progress func(string)) error {
 	if len(RunningInstances(dir)) > 0 {
 		return errRunning
@@ -183,18 +182,18 @@ func Extract(payload fs.FS, dir string, progress func(string)) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		progress("Copiando " + p + "…")
+		progress(i18n.T("Copying {0}…", p))
 		_, err = copyFile(payload, p, filepath.Join(dir, filepath.FromSlash(p)))
 		return err
 	})
 }
 
-// WaitProcessExit espera o processo pid terminar (usado na atualização:
-// o vpn_specify abre o instalador e fecha em seguida).
+// WaitProcessExit waits for process pid to end (used when updating:
+// vpn_specify starts the installer and exits right after).
 func WaitProcessExit(pid uint32, timeout time.Duration) {
 	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, pid)
 	if err != nil {
-		return // já terminou
+		return // already ended
 	}
 	defer windows.CloseHandle(h)
 	_, _ = windows.WaitForSingleObject(h, uint32(timeout/time.Millisecond))

@@ -6,14 +6,15 @@ import (
 
 	"vpn_specify/internal/brand"
 	"vpn_specify/internal/engine"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/store"
 )
 
 //go:embed web/index.html
 var uiHTML string
 
-// Tipos e utilitários usados pela janela no Windows (WebView2) e no Linux
-// (página servida localmente).
+// Types and helpers used by the window on Windows (WebView2) and on Linux
+// (locally served page).
 
 type uiState struct {
 	Status   engine.Status  `json:"status"`
@@ -33,13 +34,15 @@ type pickedApp struct {
 	Capture []string `json:"capture"`
 }
 
-// pageHTML monta a página: logotipo, plataforma ("windows" ou "linux", que
-// ajusta textos e opções) e, no Linux, o script que liga as funções vs* ao
-// servidor local (no Windows elas vêm do WebView2).
+// pageHTML builds the page: logo, platform ("windows" or "linux", which
+// adjusts texts and options), the translation runtime (internal/i18n) and,
+// on Linux, the script that binds the vs* functions to the local server (on
+// Windows they come from WebView2).
 func pageHTML(platform, bridge string) string {
 	return strings.NewReplacer(
 		"{{LOGO}}", brand.LogoDataURI(),
 		"{{PLATFORM}}", platform,
+		"{{I18N_SCRIPT}}", i18n.PageScript(),
 		"<!--{{BRIDGE}}-->", bridge,
 	).Replace(uiHTML)
 }

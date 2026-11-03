@@ -3,12 +3,11 @@
 package capture
 
 import (
-	"errors"
-
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/tunnel"
 )
 
-// Start só existe no Windows (usa o driver WinDivert).
+// Start only exists on Windows (it uses the WinDivert driver).
 func Start(tun tunnel.Tunnel, exeNames []string, verbose bool) (Controller, error) {
-	return nil, errors.New("-capture só está disponível no Windows; aqui use \"vpn_specify run <programa>\" (proxy) ou -L para endereços fixos")
+	return nil, i18n.Error("-capture is only available on Windows; here use \"vpn_specify run <program>\" (proxy) or -L for fixed addresses")
 }

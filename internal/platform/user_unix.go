@@ -12,17 +12,17 @@ import (
 	"syscall"
 )
 
-// SudoUser é quem chamou o sudo, quando o vpn_specify roda como root via
-// sudo (o modo OpenVPN precisa de root). Apps abertos pelo "up -- programa"
-// rodam como esse usuário, nunca como root.
+// SudoUser is whoever called sudo, when vpn_specify runs as root through
+// sudo (OpenVPN mode needs root). Apps opened by "up -- program" run as that
+// user, never as root.
 type SudoUser struct {
 	UID, GID uint32
 	Name     string
 	Home     string
 }
 
-// InvokingUser devolve o usuário que chamou o sudo, ou nil se não estamos
-// rodando como root via sudo.
+// InvokingUser returns the user who called sudo, or nil when not running as
+// root through sudo.
 func InvokingUser() *SudoUser {
 	if os.Geteuid() != 0 {
 		return nil
@@ -39,8 +39,8 @@ func InvokingUser() *SudoUser {
 	return &SudoUser{UID: uint32(uid), GID: uint32(gid), Name: u.Username, Home: u.HomeDir}
 }
 
-// MkdirAllOwned cria dir (como os.MkdirAll) e passa as pastas criadas para o
-// dono u, para o usuário conseguir usá-las depois.
+// MkdirAllOwned creates dir (like os.MkdirAll) and gives the created folders
+// to u, so the user can use them later.
 func (u *SudoUser) MkdirAllOwned(dir string, perm os.FileMode) error {
 	var created []string
 	for d := dir; ; d = filepath.Dir(d) {
@@ -58,10 +58,10 @@ func (u *SudoUser) MkdirAllOwned(dir string, perm os.FileMode) error {
 	return nil
 }
 
-// Chown passa o arquivo para o dono u.
+// Chown gives the file to u.
 func (u *SudoUser) Chown(path string) error { return os.Chown(path, int(u.UID), int(u.GID)) }
 
-// Apply faz cmd rodar como u, com HOME/USER do usuário (e não do root).
+// Apply makes cmd run as u, with the user's HOME/USER (not root's).
 func (u *SudoUser) Apply(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -69,7 +69,7 @@ func (u *SudoUser) Apply(cmd *exec.Cmd) {
 	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: u.UID, Gid: u.GID}
 	set := map[string]string{"HOME": u.Home, "USER": u.Name, "LOGNAME": u.Name}
 	if rt := "/run/user/" + strconv.FormatUint(uint64(u.UID), 10); dirExists(rt) {
-		set["XDG_RUNTIME_DIR"] = rt // Wayland, PulseAudio/PipeWire, D-Bus da sessão
+		set["XDG_RUNTIME_DIR"] = rt // Wayland, PulseAudio/PipeWire, session D-Bus
 	}
 	env := cmd.Env
 	if env == nil {

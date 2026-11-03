@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -19,17 +18,18 @@ import (
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/textutil"
 )
 
-// O WireGuard roda inteiro em userspace: a pilha TCP/IP da VPN (gVisor
-// netstack) vive dentro deste processo. Nenhum adaptador de rede é criado e
-// nenhuma rota do Windows é alterada, por isso não precisa de Administrador.
+// WireGuard runs entirely in user space: the VPN's TCP/IP stack (gVisor
+// netstack) lives inside this process. No network adapter is created and no
+// system route is changed, so no Administrator/root is needed.
 
 type wgTunnel struct {
 	dev   *device.Device
 	tnet  *netstack.Net
-	addr4 netip.Addr // primeiro IPv4 do [Interface] Address
+	addr4 netip.Addr // first IPv4 of [Interface] Address
 }
 
 type wgPeer struct {
@@ -91,7 +91,7 @@ func ParseWireGuardConfig(data []byte) (*wgConfig, error) {
 		}
 		k, v, ok := strings.Cut(line, "=")
 		if !ok {
-			return nil, fmt.Errorf("linha %d inválida: %q", n, line)
+			return nil, i18n.Error("invalid line {0}: {1}", n, strconv.Quote(line))
 		}
 		k = strings.ToLower(strings.TrimSpace(k))
 		v = strings.TrimSpace(v)
@@ -105,13 +105,13 @@ func ParseWireGuardConfig(data []byte) (*wgConfig, error) {
 				if p, perr := netip.ParsePrefix(s); perr == nil {
 					a = p.Addr()
 				} else if a, err = netip.ParseAddr(s); err != nil {
-					return nil, fmt.Errorf("linha %d: endereço inválido %q", n, s)
+					return nil, i18n.Error("line {0}: invalid address {1}", n, strconv.Quote(s))
 				}
 				cfg.addrs = append(cfg.addrs, a)
 			}
 		case "interface.dns":
 			for _, s := range textutil.SplitList(v) {
-				if a, perr := netip.ParseAddr(s); perr == nil { // ignora domínios de busca
+				if a, perr := netip.ParseAddr(s); perr == nil { // skip search domains
 					cfg.dns = append(cfg.dns, a)
 				}
 			}
@@ -131,27 +131,27 @@ func ParseWireGuardConfig(data []byte) (*wgConfig, error) {
 			for _, s := range textutil.SplitList(v) {
 				p, perr := netip.ParsePrefix(s)
 				if perr != nil {
-					return nil, fmt.Errorf("linha %d: AllowedIPs inválido %q", n, s)
+					return nil, i18n.Error("line {0}: invalid AllowedIPs {1}", n, strconv.Quote(s))
 				}
 				cur.allowedIPs = append(cur.allowedIPs, p.String())
 			}
 		}
 		if err != nil {
-			return nil, fmt.Errorf("linha %d (%s): %w", n, k, err)
+			return nil, i18n.Wrap(err, "line {0} ({1})", n, k)
 		}
 	}
 	if cfg.privateKey == "" {
-		return nil, errors.New("PrivateKey ausente em [Interface]")
+		return nil, i18n.Error("PrivateKey missing in [Interface]")
 	}
 	if len(cfg.addrs) == 0 {
-		return nil, errors.New("Address ausente em [Interface]")
+		return nil, i18n.Error("Address missing in [Interface]")
 	}
 	if len(cfg.peers) == 0 {
-		return nil, errors.New("nenhum [Peer] na configuração")
+		return nil, i18n.Error("no [Peer] in the configuration")
 	}
 	for _, p := range cfg.peers {
 		if p.publicKey == "" {
-			return nil, errors.New("[Peer] sem PublicKey")
+			return nil, i18n.Error("[Peer] without PublicKey")
 		}
 	}
 	return cfg, nil
@@ -160,24 +160,24 @@ func ParseWireGuardConfig(data []byte) (*wgConfig, error) {
 func keyToHex(b64 string) (string, error) {
 	k, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil || len(k) != 32 {
-		return "", errors.New("chave inválida (esperado base64 de 32 bytes)")
+		return "", i18n.Error("invalid key (expected base64 of 32 bytes)")
 	}
 	return hex.EncodeToString(k), nil
 }
 
-// resolveEndpoint resolve o hostname do servidor VPN com o DNS normal do
-// computador (o túnel ainda não existe nesse momento).
+// resolveEndpoint resolves the VPN server hostname with the computer's normal
+// DNS (the tunnel does not exist yet at that point).
 func resolveEndpoint(ep string) (string, error) {
 	host, port, err := net.SplitHostPort(ep)
 	if err != nil {
-		return "", fmt.Errorf("Endpoint inválido %q: %w", ep, err)
+		return "", i18n.Wrap(err, "invalid Endpoint {0}", strconv.Quote(ep))
 	}
 	if _, err := netip.ParseAddr(host); err == nil {
 		return ep, nil
 	}
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return "", fmt.Errorf("não consegui resolver o Endpoint %s: %w", host, err)
+		return "", i18n.Wrap(err, "could not resolve the Endpoint {0}", host)
 	}
 	best := ips[0]
 	for _, ip := range ips {
@@ -192,7 +192,7 @@ func resolveEndpoint(ep string) (string, error) {
 func OpenWireGuard(data []byte, o Options) (Tunnel, error) {
 	cfg, err := ParseWireGuardConfig(data)
 	if err != nil {
-		return nil, fmt.Errorf("config WireGuard: %w", err)
+		return nil, i18n.Wrap(err, "WireGuard configuration")
 	}
 	for _, p := range cfg.peers {
 		if p.endpoint != "" {
@@ -207,12 +207,12 @@ func OpenWireGuard(data []byte, o Options) (Tunnel, error) {
 	}
 	if len(dns) == 0 {
 		dns = []netip.Addr{netip.MustParseAddr("1.1.1.1")}
-		log.Printf("aviso: a config não define DNS; usando 1.1.1.1 (por dentro da VPN)")
+		log.Printf("warning: the configuration sets no DNS; using 1.1.1.1 (inside the VPN)")
 	}
 
 	tdev, tnet, err := netstack.CreateNetTUN(cfg.addrs, dns, cfg.mtu)
 	if err != nil {
-		return nil, fmt.Errorf("criando pilha de rede virtual: %w", err)
+		return nil, i18n.Wrap(err, "creating the virtual network stack")
 	}
 	level := device.LogLevelError
 	if o.Verbose {
@@ -221,7 +221,7 @@ func OpenWireGuard(data []byte, o Options) (Tunnel, error) {
 	dev := device.NewDevice(tdev, conn.NewDefaultBind(), device.NewLogger(level, "[wireguard] "))
 	if err := dev.IpcSet(cfg.ipc()); err != nil {
 		dev.Close()
-		return nil, fmt.Errorf("aplicando config WireGuard: %w", err)
+		return nil, i18n.Wrap(err, "applying the WireGuard configuration")
 	}
 	if err := dev.Up(); err != nil {
 		dev.Close()
@@ -234,17 +234,17 @@ func OpenWireGuard(data []byte, o Options) (Tunnel, error) {
 			break
 		}
 	}
-	log.Printf("WireGuard: endereço %v, DNS %v", cfg.addrs, dns)
+	log.Printf("WireGuard: address %v, DNS %v", cfg.addrs, dns)
 	if err := t.waitHandshake(15 * time.Second); err != nil {
-		log.Printf("aviso: %v", err)
+		log.Printf("warning: %v", err)
 	} else {
-		log.Printf("WireGuard: handshake com o servidor OK")
+		log.Printf("WireGuard: handshake with the server OK")
 	}
 	return t, nil
 }
 
-// waitHandshake gera um pouco de tráfego (uma consulta DNS) para disparar o
-// handshake e espera o servidor responder.
+// waitHandshake generates a bit of traffic (a DNS query) to trigger the
+// handshake and waits for the server to answer.
 func (t *wgTunnel) waitHandshake(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -254,7 +254,7 @@ func (t *wgTunnel) waitHandshake(timeout time.Duration) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return errors.New("ainda sem handshake com o servidor WireGuard (confira Endpoint, chaves e firewall)")
+			return i18n.Error("no handshake with the WireGuard server yet (check Endpoint, keys and firewall)")
 		case <-tick.C:
 			s, err := t.dev.IpcGet()
 			if err != nil {
@@ -273,10 +273,10 @@ func (t *wgTunnel) DialContext(ctx context.Context, network, addr string) (net.C
 	return t.tnet.DialContext(ctx, network, addr)
 }
 
-// ListenUDP liga o socket ao IPv4 do túnel (no gVisor, 0.0.0.0 não acha rota).
+// ListenUDP binds the socket to the tunnel's IPv4 (in gVisor, 0.0.0.0 finds no route).
 func (t *wgTunnel) ListenUDP() (net.PacketConn, error) {
 	if !t.addr4.IsValid() {
-		return nil, errors.New("a config WireGuard não tem endereço IPv4 (UDP só suporta IPv4)")
+		return nil, i18n.Error("the WireGuard configuration has no IPv4 address (UDP only supports IPv4)")
 	}
 	return t.tnet.ListenUDPAddrPort(netip.AddrPortFrom(t.addr4, 0))
 }
@@ -294,10 +294,10 @@ func (t *wgTunnel) LookupIP(ctx context.Context, host string) (net.IP, error) {
 			return ip, nil
 		}
 	}
-	return nil, fmt.Errorf("%s: sem endereço IPv4", host)
+	return nil, i18n.Error("{0}: no IPv4 address", host)
 }
 
-func (t *wgTunnel) Done() <-chan error { return nil } // o WireGuard não "cai": ele reconecta sozinho
+func (t *wgTunnel) Done() <-chan error { return nil } // WireGuard does not "go down": it reconnects by itself
 
 func (t *wgTunnel) Close() error {
 	t.dev.Close()

@@ -1,5 +1,5 @@
-// Package brand guarda o logotipo do vpn_specify, usado nas páginas da
-// interface e do instalador.
+// Package brand holds the vpn_specify logo, used by the app and installer
+// pages.
 package brand
 
 import (
@@ -10,10 +10,10 @@ import (
 //go:embed logo.png
 var logoPNG []byte
 
-// LogoDataURI devolve o logotipo como data URI (para <img src> e favicon).
+// LogoDataURI returns the logo as a data URI (for <img src> and favicons).
 func LogoDataURI() string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(logoPNG)
 }
 
-// LogoPNG devolve o logotipo em PNG (ícone dos atalhos .desktop no Linux).
+// LogoPNG returns the logo as PNG (icon of the .desktop shortcuts on Linux).
 func LogoPNG() []byte { return logoPNG }

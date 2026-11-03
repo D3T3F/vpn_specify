@@ -5,14 +5,16 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/paths"
 
 	"vpn_specify/internal/platform"
@@ -20,19 +22,20 @@ import (
 	"vpn_specify/internal/tunnel"
 )
 
-// Dados do app (veja paths.DataDir):
-//   configs\        arquivos .ovpn / .conf importados
-//   settings.json   apps, credenciais e preferências
-//   control.json    porta/token da instância em execução
+// App data (see paths.DataDir):
+//   configs\        imported .ovpn / .conf files
+//   settings.json   apps, credentials and preferences
+//   control.json    port/token of the running instance
+//   language        chosen interface language (see internal/i18n)
 //   vpn_specify.log log
 
 type VPNConfig struct {
 	Name     string `json:"name"`
-	File     string `json:"file"` // nome do arquivo em configs\
+	File     string `json:"file"` // file name inside configs\
 	Kind     string `json:"kind"` // openvpn | wireguard
 	NeedAuth bool   `json:"needAuth"`
 	User     string `json:"user,omitempty"`
-	PassEnc  string `json:"passEnc,omitempty"` // senha protegida com DPAPI (só este usuário do Windows lê)
+	PassEnc  string `json:"passEnc,omitempty"` // protected password (DPAPI on Windows: only this user can read it)
 	HasPass  bool   `json:"hasPass"`
 }
 
@@ -43,18 +46,18 @@ type AppEntry struct {
 	Args     string   `json:"args"`
 	WorkDir  string   `json:"workDir"`
 	Icon     string   `json:"icon"`
-	Config   string   `json:"config"`  // nome da VPN
+	Config   string   `json:"config"`  // VPN name
 	Mode     string   `json:"mode"`    // capture | proxy
-	Capture  []string `json:"capture"` // executáveis capturados
+	Capture  []string `json:"capture"` // captured executables
 	Shortcut string   `json:"shortcut"`
-	// Autostart: abrir na VPN ao entrar na conta (veja internal/autostart)
+	// Autostart: open in the VPN when signing in (see internal/autostart)
 	Autostart bool `json:"autostart"`
 }
 
 type Settings struct {
-	AutoDisconnect bool        `json:"autoDisconnect"` // desconecta quando os apps fecham (sem janela aberta)
-	NoUpdateCheck  bool        `json:"noUpdateCheck"`  // não procurar atualizações ao abrir
-	SkipVersion    string      `json:"skipVersion"`    // versão que o usuário mandou ignorar
+	AutoDisconnect bool        `json:"autoDisconnect"` // disconnect when the apps close (with the window closed)
+	NoUpdateCheck  bool        `json:"noUpdateCheck"`  // do not check for updates on start
+	SkipVersion    string      `json:"skipVersion"`    // version the user chose to skip
 	Configs        []VPNConfig `json:"configs"`
 	Apps           []AppEntry  `json:"apps"`
 }
@@ -65,7 +68,7 @@ type Store struct {
 	s   Settings
 }
 
-// Open abre a pasta de dados padrão (veja paths.DataDir).
+// Open opens the default data folder (see paths.DataDir).
 func Open() (*Store, error) { return OpenAt(paths.DataDir()) }
 
 func OpenAt(dir string) (*Store, error) {
@@ -75,9 +78,9 @@ func OpenAt(dir string) (*Store, error) {
 	}
 	b, err := os.ReadFile(filepath.Join(st.Dir, "settings.json"))
 	if err == nil {
-		b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF}) // BOM (ex.: editado no Bloco de Notas)
+		b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF}) // BOM (e.g. edited in Notepad)
 		if err := json.Unmarshal(b, &st.s); err != nil {
-			return nil, fmt.Errorf("settings.json inválido: %w", err)
+			return nil, i18n.Wrap(err, "invalid settings.json")
 		}
 	}
 	return st, nil
@@ -99,10 +102,10 @@ func (st *Store) Snapshot() Settings {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	s := st.s
-	s.Configs = append([]VPNConfig{}, st.s.Configs...) // nunca nil: a tela espera listas
+	s.Configs = append([]VPNConfig{}, st.s.Configs...) // never nil: the page expects lists
 	s.Apps = append([]AppEntry{}, st.s.Apps...)
 	for i := range s.Configs {
-		s.Configs[i].PassEnc = "" // não manda a senha para a interface
+		s.Configs[i].PassEnc = "" // never send the password to the interface
 	}
 	return s
 }
@@ -114,7 +117,7 @@ func (st *Store) SetAutoDisconnect(v bool) error {
 	return st.saveLocked()
 }
 
-// SetUpdateCheck liga/desliga a busca de atualizações ao abrir.
+// SetUpdateCheck turns the update check on start on or off.
 func (st *Store) SetUpdateCheck(v bool) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -122,7 +125,7 @@ func (st *Store) SetUpdateCheck(v bool) error {
 	return st.saveLocked()
 }
 
-// SetSkipVersion guarda uma versão que não deve mais ser oferecida.
+// SetSkipVersion stores a version that must not be offered again.
 func (st *Store) SetSkipVersion(v string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -132,12 +135,12 @@ func (st *Store) SetSkipVersion(v string) error {
 
 var unsafeName = regexp.MustCompile(`[^\p{L}\p{N} ._()-]+`)
 
-// SafeName troca os caracteres inválidos em nomes de arquivo por repl.
+// SafeName replaces characters that are invalid in file names with repl.
 func SafeName(s, repl string) string {
 	return strings.TrimSpace(unsafeName.ReplaceAllString(s, repl))
 }
 
-// ImportConfig copia um arquivo de VPN para data\configs.
+// ImportConfig copies a VPN file into data\configs.
 func (st *Store) ImportConfig(src string) (VPNConfig, error) {
 	data, err := os.ReadFile(src)
 	if err != nil {
@@ -170,7 +173,7 @@ func (st *Store) ImportConfig(src string) (VPNConfig, error) {
 
 var kindExt = map[string]string{"openvpn": ".ovpn", "wireguard": ".conf"}
 
-// inspectConfig descobre o tipo da configuração e valida o conteúdo.
+// inspectConfig finds the configuration type and validates its content.
 func inspectConfig(data []byte, looksOVPN bool) (VPNConfig, error) {
 	lower := strings.ToLower(string(data))
 	var c VPNConfig
@@ -178,13 +181,13 @@ func inspectConfig(data []byte, looksOVPN bool) (VPNConfig, error) {
 	case strings.Contains(lower, "[interface]"):
 		c.Kind = "wireguard"
 		if _, err := tunnel.ParseWireGuardConfig(data); err != nil {
-			return c, fmt.Errorf("WireGuard inválido: %w", err)
+			return c, i18n.Wrap(err, "invalid WireGuard configuration")
 		}
 	case strings.Contains(lower, "remote ") || strings.Contains(lower, "<connection>") || looksOVPN:
 		c.Kind = "openvpn"
 		c.NeedAuth = tunnel.OpenVPNNeedsAuth(data)
 	default:
-		return c, errors.New("o conteúdo não parece uma configuração OpenVPN (.ovpn) nem WireGuard (.conf)")
+		return c, i18n.Error("the content does not look like an OpenVPN (.ovpn) or WireGuard (.conf) configuration")
 	}
 	return c, nil
 }
@@ -195,13 +198,13 @@ func (st *Store) sortConfigsLocked() {
 	})
 }
 
-// ConfigText devolve o conteúdo do arquivo de uma VPN salva.
+// ConfigText returns the file content of a saved VPN.
 func (st *Store) ConfigText(name string) (string, error) {
 	st.mu.Lock()
 	c := st.configLocked(name)
 	if c == nil {
 		st.mu.Unlock()
-		return "", fmt.Errorf("configuração %q não existe", name)
+		return "", i18n.Error("the configuration {0} does not exist", strconv.Quote(name))
 	}
 	path := filepath.Join(st.Dir, "configs", c.File)
 	st.mu.Unlock()
@@ -212,28 +215,28 @@ func (st *Store) ConfigText(name string) (string, error) {
 	return strings.ReplaceAll(string(bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})), "\r\n", "\n"), nil
 }
 
-// UpdateConfig renomeia e/ou altera o conteúdo de uma VPN salva. Os apps que
-// usam a VPN passam a apontar para o novo nome; as credenciais são mantidas.
+// UpdateConfig renames and/or changes the content of a saved VPN. Apps using
+// the VPN follow the new name; the credentials are kept.
 func (st *Store) UpdateConfig(name, newName, text string) (VPNConfig, error) {
 	newName = SafeName(newName, "_")
 	if newName == "" {
-		return VPNConfig{}, errors.New("informe um nome para a VPN")
+		return VPNConfig{}, i18n.Error("enter a name for the VPN")
 	}
 	if strings.TrimSpace(text) == "" {
-		return VPNConfig{}, errors.New("o conteúdo da configuração está vazio")
+		return VPNConfig{}, i18n.Error("the configuration content is empty")
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	c := st.configLocked(name)
 	if c == nil {
-		return VPNConfig{}, fmt.Errorf("configuração %q não existe", name)
+		return VPNConfig{}, i18n.Error("the configuration {0} does not exist", strconv.Quote(name))
 	}
 	if newName != name {
 		if other := st.configLocked(newName); other != nil {
-			return VPNConfig{}, fmt.Errorf("já existe uma VPN chamada %q", newName)
+			return VPNConfig{}, i18n.Error("a VPN named {0} already exists", strconv.Quote(newName))
 		}
 	}
-	info, err := inspectConfig([]byte(text), false) // na edição o conteúdo precisa se identificar
+	info, err := inspectConfig([]byte(text), false) // when editing, the content must identify itself
 	if err != nil {
 		return VPNConfig{}, err
 	}
@@ -242,13 +245,13 @@ func (st *Store) UpdateConfig(name, newName, text string) (VPNConfig, error) {
 	oldPath := filepath.Join(dir, c.File)
 	data := []byte(text)
 	if old, err := os.ReadFile(oldPath); err == nil && bytes.Contains(old, []byte("\r\n")) {
-		data = []byte(strings.ReplaceAll(text, "\n", "\r\n")) // mantém o fim de linha do Windows
+		data = []byte(strings.ReplaceAll(text, "\n", "\r\n")) // keep Windows line endings
 	}
 	newFile := newName + kindExt[info.Kind]
 	newPath := filepath.Join(dir, newFile)
 	if !strings.EqualFold(newPath, oldPath) {
 		if _, err := os.Stat(newPath); err == nil {
-			return VPNConfig{}, fmt.Errorf("o arquivo %s já existe na pasta de configurações", newFile)
+			return VPNConfig{}, i18n.Error("the file {0} already exists in the configurations folder", newFile)
 		}
 	}
 	tmp := newPath + ".tmp"
@@ -284,19 +287,19 @@ func (st *Store) configLocked(name string) *VPNConfig {
 	return nil
 }
 
-// ConfigFor devolve o caminho do arquivo e as opções de conexão.
+// ConfigFor returns the file path and the connection options.
 func (st *Store) ConfigFor(name string) (string, tunnel.Options, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	c := st.configLocked(name)
 	if c == nil {
-		return "", tunnel.Options{}, fmt.Errorf("configuração %q não existe", name)
+		return "", tunnel.Options{}, i18n.Error("the configuration {0} does not exist", strconv.Quote(name))
 	}
 	o := tunnel.Options{NoConsole: true, AuthUser: c.User}
 	if c.PassEnc != "" {
 		p, err := platform.Unprotect(c.PassEnc)
 		if err != nil {
-			return "", o, fmt.Errorf("não consegui ler a senha salva: %w", err)
+			return "", o, i18n.Wrap(err, "could not read the saved password")
 		}
 		o.AuthPass = p
 	}
@@ -315,7 +318,7 @@ func (st *Store) SetCredentials(name, user, pass string) error {
 	defer st.mu.Unlock()
 	c := st.configLocked(name)
 	if c == nil {
-		return fmt.Errorf("configuração %q não existe", name)
+		return i18n.Error("the configuration {0} does not exist", strconv.Quote(name))
 	}
 	c.User, c.PassEnc, c.HasPass = user, enc, enc != ""
 	return st.saveLocked()
@@ -326,7 +329,7 @@ func (st *Store) RemoveConfig(name string) error {
 	defer st.mu.Unlock()
 	for _, a := range st.s.Apps {
 		if a.Config == name {
-			return fmt.Errorf("o app %q usa esta VPN; remova ou altere o app antes", a.Name)
+			return i18n.Error("the app {0} uses this VPN; remove or change the app first", strconv.Quote(a.Name))
 		}
 	}
 	for i, c := range st.s.Configs {
@@ -339,6 +342,9 @@ func (st *Store) RemoveConfig(name string) error {
 	return nil
 }
 
+// ErrAppNotFound: no app with that id.
+var ErrAppNotFound = i18n.Sentinel("app not found")
+
 func newID() string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
@@ -348,25 +354,25 @@ func newID() string {
 func (st *Store) SaveApp(a AppEntry) (AppEntry, error) {
 	a.Name = strings.TrimSpace(a.Name)
 	if a.Name == "" || a.Path == "" {
-		return a, errors.New("nome e programa são obrigatórios")
+		return a, i18n.Error("name and program are required")
 	}
 	if a.Mode != "proxy" {
 		a.Mode = "capture"
 	}
 	a.Capture = normalizeList(a.Capture)
 	if a.Mode == "capture" && len(a.Capture) == 0 {
-		return a, errors.New("informe ao menos um processo para capturar (ex.: discord.exe)")
+		return a, i18n.Error("enter at least one process to capture (e.g. discord.exe)")
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.configLocked(a.Config) == nil {
-		return a, errors.New("escolha uma VPN para o app")
+		return a, i18n.Error("choose a VPN for the app")
 	}
 	if a.Autostart {
-		// só uma VPN fica ativa por vez
+		// only one VPN is active at a time
 		for _, o := range st.s.Apps {
 			if o.ID != a.ID && o.Autostart && o.Config != a.Config {
-				return a, fmt.Errorf("só uma VPN fica ativa por vez: os apps que abrem com o sistema precisam usar a mesma VPN (%s abre com a VPN %q)", o.Name, o.Config)
+				return a, i18n.Error("only one VPN is active at a time: the apps that start with the system must use the same VPN ({0} starts with the VPN {1})", o.Name, strconv.Quote(o.Config))
 			}
 		}
 	}
@@ -383,7 +389,7 @@ func (st *Store) SaveApp(a AppEntry) (AppEntry, error) {
 			}
 		}
 		if !found {
-			return a, errors.New("app não encontrado")
+			return a, ErrAppNotFound
 		}
 	}
 	return a, st.saveLocked()
@@ -409,7 +415,7 @@ func (st *Store) SetShortcut(id, path string) error {
 			return st.saveLocked()
 		}
 	}
-	return errors.New("app não encontrado")
+	return ErrAppNotFound
 }
 
 func (st *Store) RemoveApp(id string) (AppEntry, error) {
@@ -421,10 +427,10 @@ func (st *Store) RemoveApp(id string) (AppEntry, error) {
 			return a, st.saveLocked()
 		}
 	}
-	return AppEntry{}, errors.New("app não encontrado")
+	return AppEntry{}, ErrAppNotFound
 }
 
-// AutostartApps devolve os apps marcados para abrir com o sistema.
+// AutostartApps returns the apps marked to start with the system.
 func (st *Store) AutostartApps() []AppEntry {
 	st.mu.Lock()
 	defer st.mu.Unlock()

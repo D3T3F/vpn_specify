@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,27 +17,27 @@ import (
 	"syscall"
 	"time"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 )
 
-// Modo OpenVPN
+// OpenVPN mode
 //
-// Usa o openvpn.exe instalado, mas impede que ele mexa no roteamento do
-// Windows:
-//   - --route-nopull + pull-filter: ignora rotas, redirect-gateway, DNS e
-//     block-outside-dns enviados pelo servidor;
-//   - as mesmas diretivas são removidas do .ovpn (numa cópia temporária);
-//   - adiciona só uma rota padrão pelo túnel com métrica 9999. Como a rota
-//     normal do PC tem métrica bem menor, o tráfego do sistema continua indo
-//     pela rede normal.
+// Runs the installed openvpn, but keeps it from touching the system routing:
+//   - --route-nopull + pull-filter: ignore routes, redirect-gateway, DNS and
+//     block-outside-dns pushed by the server;
+//   - the same directives are removed from the .ovpn (in a temporary copy);
+//   - only a default route through the tunnel with metric 9999 is added. The
+//     computer's normal route has a much lower metric, so system traffic
+//     keeps using the normal network.
 //
-// O proxy abre as conexões com o IP local do túnel como origem. O Windows
-// usa o modelo "strong host" no envio: um socket ligado ao IP do túnel só
-// pode sair pela interface do túnel, e usa aquela rota de métrica 9999.
-// Assim, só o tráfego do proxy passa pela VPN.
+// The proxy opens connections with the tunnel's local IP as source. Windows
+// uses the "strong host" model when sending: a socket bound to the tunnel IP
+// can only leave through the tunnel interface, using that metric-9999 route.
+// So only the proxy's traffic goes through the VPN.
 //
-// No Linux ("weak host") isso não vale: lá os sockets também são presos à
-// interface do túnel com SO_BINDTODEVICE (veja bind_linux.go).
+// That does not hold on Linux ("weak host"): there the sockets are also bound
+// to the tunnel interface with SO_BINDTODEVICE (see bind_linux.go).
 
 var ovpnStripDirectives = map[string]bool{
 	"redirect-gateway":  true,
@@ -54,14 +53,14 @@ var ovpnStripDirectives = map[string]bool{
 type ovpnTunnel struct {
 	cmd     *exec.Cmd
 	localIP net.IP
-	ifName  string // interface do túnel; só usada no Linux (SO_BINDTODEVICE)
+	ifName  string // tunnel interface; only used on Linux (SO_BINDTODEVICE)
 	dns     []netip.Addr
 	tmpDir  string
 	exited  chan struct{}
 	done    chan error
 	once    sync.Once
-	stopEv  func() // sinaliza o openvpn para sair (modo sem console)
-	helper  bool   // Linux sem root: openvpn roda via pkexec + openvpn-helper
+	stopEv  func() // tells openvpn to exit (no-console mode)
+	helper  bool   // Linux without root: openvpn runs via pkexec + openvpn-helper
 
 	cacheMu sync.Mutex
 	cache   map[string]dnsCacheEntry
@@ -80,12 +79,12 @@ func findOpenVPN(explicit string) (string, error) {
 		return p, nil
 	}
 	if runtime.GOOS != "windows" {
-		for _, p := range []string{"/usr/sbin/openvpn", "/usr/local/sbin/openvpn"} { // sudo nem sempre tem sbin no PATH
+		for _, p := range []string{"/usr/sbin/openvpn", "/usr/local/sbin/openvpn"} { // sudo's PATH does not always have sbin
 			if _, err := os.Stat(p); err == nil {
 				return p, nil
 			}
 		}
-		return "", errors.New("openvpn não encontrado; instale o pacote openvpn (ex.: sudo apt install openvpn) ou use -openvpn <caminho>")
+		return "", i18n.Error("openvpn not found; install the openvpn package (e.g. sudo apt install openvpn) or use -openvpn <path>")
 	}
 	for _, c := range []string{`%ProgramFiles%\OpenVPN\bin\openvpn.exe`, `%ProgramFiles(x86)%\OpenVPN\bin\openvpn.exe`} {
 		p := platform.ExpandEnv(c)
@@ -93,11 +92,11 @@ func findOpenVPN(explicit string) (string, error) {
 			return p, nil
 		}
 	}
-	return "", errors.New("openvpn.exe não encontrado; instale o OpenVPN Community (https://openvpn.net/community-downloads/) ou use -openvpn <caminho>")
+	return "", i18n.Error("openvpn.exe not found; install OpenVPN Community (https://openvpn.net/community-downloads/) or use -openvpn <path>")
 }
 
-// sanitizeOVPN remove do .ovpn tudo que mexeria nas rotas ou no DNS do
-// sistema. Também devolve DNS/ifconfig definidos localmente, como reserva.
+// sanitizeOVPN removes from the .ovpn everything that would change the system
+// routes or DNS. It also returns locally defined DNS/ifconfig, as a fallback.
 func sanitizeOVPN(data []byte) (out []byte, dns []netip.Addr, ifconfig net.IP) {
 	var b bytes.Buffer
 	inBlock := ""
@@ -128,7 +127,7 @@ func sanitizeOVPN(data []byte) (out []byte, dns []netip.Addr, ifconfig net.IP) {
 				ifconfig = net.ParseIP(f[1]).To4()
 			}
 			if ovpnStripDirectives[d] {
-				b.WriteString("# [vpn_specify removeu] " + l + "\n")
+				b.WriteString("# [removed by vpn_specify] " + l + "\n")
 				continue
 			}
 		}
@@ -137,7 +136,7 @@ func sanitizeOVPN(data []byte) (out []byte, dns []netip.Addr, ifconfig net.IP) {
 	return b.Bytes(), dns, ifconfig
 }
 
-// OpenVPNNeedsAuth diz se o .ovpn pede usuário/senha sem arquivo de credenciais.
+// OpenVPNNeedsAuth reports whether the .ovpn asks for user/password without a credentials file.
 func OpenVPNNeedsAuth(data []byte) bool {
 	for _, line := range strings.Split(string(data), "\n") {
 		f := strings.Fields(line)
@@ -148,8 +147,8 @@ func OpenVPNNeedsAuth(data []byte) bool {
 	return false
 }
 
-// parsePushReply extrai o IP do túnel e os DNS da mensagem PUSH_REPLY que o
-// OpenVPN registra no log (antes dos filtros serem aplicados).
+// parsePushReply extracts the tunnel IP and DNS servers from the PUSH_REPLY
+// message OpenVPN logs (before the filters are applied).
 func parsePushReply(line string) (ip net.IP, dns []netip.Addr) {
 	i := strings.Index(line, "PUSH_REPLY,")
 	if i < 0 {
@@ -175,16 +174,15 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Linux, interface gráfica sem root: o openvpn sobe via pkexec (o sistema
-	// pede a senha de administrador, como o UAC no Windows) por meio do
-	// "vpn_specify openvpn-helper" (veja RunOpenVPNHelper).
+	// Linux, graphical interface without root: openvpn starts via pkexec (the
+	// system asks for the administrator password, like UAC on Windows)
+	// through "vpn_specify openvpn-helper" (see RunOpenVPNHelper).
 	useHelper := runtime.GOOS == "linux" && o.NoConsole && !platform.IsElevated()
 	if !platform.IsElevated() && !useHelper {
 		if runtime.GOOS != "windows" {
-			return nil, errors.New("o modo OpenVPN precisa de root (o OpenVPN cria uma interface tun): rode com sudo. O modo WireGuard não precisa")
+			return nil, ErrNeedsAdmin
 		}
-		return nil, errors.New("o modo OpenVPN precisa de um terminal aberto como Administrador (o OpenVPN cria um adaptador de rede). " +
-			"O modo WireGuard não precisa")
+		return nil, i18n.Error("OpenVPN mode needs a terminal running as Administrator (OpenVPN creates a network adapter). WireGuard mode does not")
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -192,7 +190,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 	sanitized, cfgDNS, cfgIP := sanitizeOVPN(data)
 	if o.NoConsole && o.AuthUser == "" && OpenVPNNeedsAuth(data) {
-		return nil, errors.New("esta VPN pede usuário e senha: preencha as credenciais da configuração")
+		return nil, ErrNeedsCredentials
 	}
 	tmpDir, err := os.MkdirTemp("", "vpn_specify-")
 	if err != nil {
@@ -200,7 +198,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 	var authArgs []string
 	if o.AuthUser != "" {
-		// remove o auth-user-pass do .ovpn e passa um arquivo temporário (apagado ao desconectar)
+		// drop auth-user-pass from the .ovpn and pass a temporary file (deleted on disconnect)
 		var b strings.Builder
 		for _, line := range strings.Split(string(sanitized), "\n") {
 			if f := strings.Fields(line); len(f) > 0 && strings.EqualFold(strings.TrimPrefix(f[0], "--"), "auth-user-pass") {
@@ -223,8 +221,8 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 
 	args := []string{
-		"--cd", filepath.Dir(absPath), // caminhos relativos do .ovpn (ca, cert, auth) continuam funcionando
-		// Os filtros vêm antes do --config para terem prioridade.
+		"--cd", filepath.Dir(absPath), // relative paths in the .ovpn (ca, cert, auth) keep working
+		// The filters come before --config so they take precedence.
 		"--pull-filter", "ignore", "redirect-gateway",
 		"--pull-filter", "ignore", "block-outside-dns",
 		"--pull-filter", "ignore", "dhcp-option",
@@ -242,7 +240,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		pk, err := exec.LookPath("pkexec")
 		if err != nil {
 			os.RemoveAll(tmpDir)
-			return nil, errors.New("o modo OpenVPN precisa de root: instale o polkit (comando pkexec) ou abra o vpn_specify com sudo. O modo WireGuard não precisa")
+			return nil, i18n.Error("OpenVPN mode needs root: install polkit (the pkexec command) or open vpn_specify with sudo. WireGuard mode does not")
 		}
 		self, err := os.Executable()
 		if err != nil {
@@ -250,9 +248,8 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 			return nil, err
 		}
 		cmd = exec.Command(pk, append([]string{self, "openvpn-helper", exe}, args...)...)
-		// o helper encerra o openvpn quando esta entrada fecha (ao
-		// desconectar ou se o vpn_specify morrer); sinais não chegam a um
-		// processo root
+		// the helper stops openvpn when this input closes (on disconnect or
+		// if vpn_specify dies); signals cannot reach a root process
 		in, err := cmd.StdinPipe()
 		if err != nil {
 			os.RemoveAll(tmpDir)
@@ -260,8 +257,8 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		}
 		stopEvent = func() { in.Close() }
 	case o.NoConsole && runtime.GOOS == "windows":
-		// Sem console não há Ctrl+C: o openvpn sai de forma limpa (removendo
-		// as rotas) quando sinalizamos este evento.
+		// Without a console there is no Ctrl+C: openvpn exits cleanly
+		// (removing its routes) when we signal this event.
 		name, signal, err := platform.NewStopEvent()
 		if err != nil {
 			os.RemoveAll(tmpDir)
@@ -278,7 +275,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		platform.HideConsole(cmd)
 		cmd.Stderr = logWriter("[openvpn] ")
 	} else {
-		cmd.Stdin = os.Stdin // permite digitar usuário/senha se o .ovpn pedir
+		cmd.Stdin = os.Stdin // lets the user type user/password if the .ovpn asks
 		cmd.Stderr = os.Stderr
 	}
 	stdout, err := cmd.StdoutPipe()
@@ -286,13 +283,13 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		os.RemoveAll(tmpDir)
 		return nil, err
 	}
-	log.Printf("OpenVPN: iniciando %s", exe)
+	log.Printf("OpenVPN: starting %s", exe)
 	if err := cmd.Start(); err != nil {
 		os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("iniciando openvpn: %w", err)
+		return nil, i18n.Wrap(err, "starting openvpn")
 	}
 	if err := platform.BindChildToUs(cmd.Process); err != nil {
-		log.Printf("aviso: não consegui vincular o openvpn a este processo (%v); se o vpn_specify for morto, encerre o openvpn.exe manualmente", err)
+		log.Printf("warning: could not tie openvpn to this process (%v); if vpn_specify is killed, end openvpn.exe manually", err)
 	}
 
 	t := &ovpnTunnel{
@@ -303,7 +300,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	go func() {
 		err := cmd.Wait()
 		if err == nil {
-			err = errors.New("o processo openvpn terminou")
+			err = i18n.Error("the openvpn process ended")
 		}
 		close(t.exited)
 		t.done <- err
@@ -331,11 +328,11 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 			mu.Unlock()
 		}
 		if strings.Contains(line, "needs a gateway parameter") {
-			log.Printf("aviso: o OpenVPN não conseguiu criar a rota do túnel; as conexões podem falhar")
+			log.Printf("warning: OpenVPN could not create the tunnel route; connections may fail")
 		}
 		if strings.Contains(line, "AUTH_FAILED") {
 			select {
-			case failed <- errors.New("autenticação recusada pelo servidor (AUTH_FAILED)"):
+			case failed <- i18n.Error("authentication refused by the server (AUTH_FAILED)"):
 			default:
 			}
 		}
@@ -353,12 +350,12 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		t.kill()
 		var ee *exec.ExitError
 		if useHelper && errors.As(err, &ee) && (ee.ExitCode() == 126 || ee.ExitCode() == 127) {
-			return nil, errors.New("permissão de administrador negada (o OpenVPN precisa dela para criar a interface tun)")
+			return nil, ErrAdminDenied
 		}
-		return nil, fmt.Errorf("openvpn falhou ao conectar: %w (rode com -v para ver o log completo)", err)
+		return nil, i18n.Error("openvpn failed to connect: {0} (run with -v to see the full log)", err)
 	case <-time.After(5 * time.Minute):
 		t.kill()
-		return nil, errors.New("tempo esgotado esperando o OpenVPN conectar")
+		return nil, i18n.Error("timed out waiting for OpenVPN to connect")
 	}
 
 	mu.Lock()
@@ -375,7 +372,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 	if t.localIP == nil {
 		t.kill()
-		return nil, errors.New("não consegui descobrir o IP do túnel (o servidor não enviou ifconfig); rode com -v e me mande o log")
+		return nil, i18n.Error("could not find the tunnel IP (the server sent no ifconfig); run with -v and check the log")
 	}
 	if err := waitForLocalAddr(t.localIP, 30*time.Second); err != nil {
 		t.kill()
@@ -386,9 +383,9 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		return nil, err
 	}
 	if len(t.dns) == 0 {
-		log.Printf("aviso: a VPN não enviou servidores DNS; nomes serão resolvidos pelo DNS normal do PC (use -dns para mudar)")
+		log.Printf("warning: the VPN sent no DNS servers; names will be resolved by the normal DNS (use -dns to change it)")
 	}
-	log.Printf("OpenVPN: conectado. IP do túnel %s, DNS %v", t.localIP, t.dns)
+	log.Printf("OpenVPN: connected. Tunnel IP %s, DNS %v", t.localIP, t.dns)
 	return t, nil
 }
 
@@ -401,9 +398,9 @@ func isImportantOVPNLine(l string) bool {
 	return false
 }
 
-// scanOutput separa a saída em linhas. Um pedaço sem quebra de linha que
-// termina em ":" (ex.: "Enter Auth Username:") é mostrado na hora, para o
-// usuário ver o prompt.
+// scanOutput splits the output into lines. A chunk without a line break that
+// ends in ":" (e.g. "Enter Auth Username:") is shown right away, so the user
+// sees the prompt.
 func scanOutput(r io.Reader, onLine func(string)) {
 	buf := make([]byte, 4096)
 	var pending []byte
@@ -444,7 +441,7 @@ func waitForLocalAddr(ip net.IP, timeout time.Duration) error {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return fmt.Errorf("o IP do túnel %s não apareceu em nenhuma interface", ip)
+	return i18n.Error("the tunnel IP {0} did not appear on any interface", ip)
 }
 
 func (t *ovpnTunnel) dialer(network string) *net.Dialer {
@@ -460,7 +457,7 @@ func (t *ovpnTunnel) dialer(network string) *net.Dialer {
 func (t *ovpnTunnel) resolve(ctx context.Context, host string) ([]net.IP, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.To4() == nil {
-			return nil, fmt.Errorf("%s: IPv6 não é suportado no modo OpenVPN", host)
+			return nil, i18n.Error("{0}: IPv6 is not supported in OpenVPN mode", host)
 		}
 		return []net.IP{ip}, nil
 	}
@@ -508,9 +505,9 @@ func (t *ovpnTunnel) DialContext(ctx context.Context, network, addr string) (net
 	return nil, lastErr
 }
 
-// ListenUDP liga o socket ao IP do túnel; pelo mesmo motivo do TCP (strong
-// host no Windows, SO_BINDTODEVICE no Linux), os datagramas só saem pela
-// interface da VPN.
+// ListenUDP binds the socket to the tunnel IP; for the same reason as TCP
+// (strong host on Windows, SO_BINDTODEVICE on Linux), datagrams only leave
+// through the VPN interface.
 func (t *ovpnTunnel) ListenUDP() (net.PacketConn, error) {
 	lc := net.ListenConfig{Control: bindControl(t.ifName)}
 	return lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort(t.localIP.String(), "0"))
@@ -531,7 +528,7 @@ func (t *ovpnTunnel) kill() {
 		if t.stopEv != nil {
 			t.stopEv()
 		}
-		_ = t.cmd.Process.Kill() // não funciona no modo helper (processo root); o stopEv cobre
+		_ = t.cmd.Process.Kill() // does not work in helper mode (root process); stopEv covers it
 		t.waitExit(15 * time.Second)
 		os.RemoveAll(t.tmpDir)
 	})
@@ -541,12 +538,12 @@ func (t *ovpnTunnel) waitExit(d time.Duration) {
 	select {
 	case <-t.exited:
 	case <-time.After(d):
-		log.Printf("aviso: o openvpn não terminou; encerre-o manualmente")
+		log.Printf("warning: openvpn did not exit; end it manually")
 	}
 }
 
-// Close espera o openvpn sair sozinho (ele também recebe o Ctrl+C do console
-// e remove as rotas que criou); se não sair, encerra à força.
+// Close waits for openvpn to exit by itself (it also gets the console Ctrl+C
+// and removes the routes it created); if it does not, it is killed.
 func (t *ovpnTunnel) Close() error {
 	t.once.Do(func() {
 		wait := 5 * time.Second
@@ -554,8 +551,8 @@ func (t *ovpnTunnel) Close() error {
 			t.stopEv()
 			wait = 10 * time.Second
 		} else if runtime.GOOS != "windows" {
-			// fora do Windows o SIGTERM faz o openvpn sair limpo (removendo
-			// a rota); cobre também o caso de não ter recebido o Ctrl+C
+			// outside Windows SIGTERM makes openvpn exit cleanly (removing the
+			// route); also covers the case where it got no Ctrl+C
 			_ = t.cmd.Process.Signal(syscall.SIGTERM)
 		}
 		select {

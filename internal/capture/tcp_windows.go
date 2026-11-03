@@ -22,7 +22,7 @@ func (e *captureEngine) handleTCP(pkt []byte, ihl int, addr *divertAddr) bool {
 	dport := binary.BigEndian.Uint16(l4[2:4])
 	flags := l4[13]
 
-	// Resposta do proxy transparente para o app: A:proxy -> D:sp vira D:dp -> A:sp (entrada).
+	// Transparent proxy reply to the app: A:proxy -> D:sp becomes D:dp -> A:sp (inbound).
 	if sport == e.proxyPort {
 		e.mu.Lock()
 		f := e.tcp[dport]
@@ -49,11 +49,11 @@ func (e *captureEngine) handleTCP(pkt []byte, ihl int, addr *divertAddr) bool {
 	f := e.tcp[sport]
 	e.mu.Unlock()
 	if f != nil && (f.remote != dst || f.rport != dport) {
-		f = nil // porta reutilizada para outra conexão
+		f = nil // port reused by another connection
 	}
 	if f == nil {
 		if !syn {
-			return true // conexão que não é nossa (ou anterior à captura)
+			return true // not our connection (or older than the capture)
 		}
 		target, name := e.isTarget(true, false, sport)
 		if !target {
@@ -64,12 +64,12 @@ func (e *captureEngine) handleTCP(pkt []byte, ihl int, addr *divertAddr) bool {
 		e.tcp[sport] = f
 		e.mu.Unlock()
 		if e.verbose {
-			log.Printf("captura tcp %s :%d -> %s", name, sport, net.JoinHostPort(net.IP(dst[:]).String(), strconv.Itoa(int(dport))))
+			log.Printf("capture tcp %s :%d -> %s", name, sport, net.JoinHostPort(net.IP(dst[:]).String(), strconv.Itoa(int(dport))))
 		}
 	}
 	f.last.Store(time.Now().UnixNano())
 
-	// App -> proxy: A:sp -> D:dp vira D:sp -> A:proxy (entrada).
+	// App -> proxy: A:sp -> D:dp becomes D:sp -> A:proxy (inbound).
 	copy(pkt[12:16], dst[:])
 	copy(pkt[16:20], src[:])
 	binary.BigEndian.PutUint16(l4[2:4], e.proxyPort)
@@ -95,7 +95,7 @@ func (e *captureEngine) proxyConn(c net.Conn) {
 	f := e.tcp[uint16(ra.Port)]
 	e.mu.Unlock()
 	if f == nil || !ra.IP.Equal(net.IP(f.remote[:])) {
-		return // não veio de um fluxo capturado
+		return // not from a captured flow
 	}
 	defer f.done.Store(true)
 	target := net.JoinHostPort(net.IP(f.remote[:]).String(), strconv.Itoa(int(f.rport)))
@@ -104,7 +104,7 @@ func (e *captureEngine) proxyConn(c net.Conn) {
 	cancel()
 	if err != nil {
 		if e.verbose {
-			log.Printf("captura tcp %s: %v", target, err)
+			log.Printf("capture tcp %s: %v", target, err)
 		}
 		return
 	}

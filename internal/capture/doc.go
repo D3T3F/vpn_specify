@@ -1,6 +1,6 @@
-// Package capture coloca TODO o tráfego de processos escolhidos (pelo nome
-// do executável) dentro da VPN, inclusive UDP (voz), usando o driver
-// WinDivert. TCP vai por um proxy transparente; UDP por sockets do túnel.
+// Package capture puts ALL the traffic of chosen processes (by executable
+// name) inside the VPN, including UDP (voice), using the WinDivert driver.
+// TCP goes through a transparent proxy; UDP through tunnel sockets.
 //
-// Só funciona no Windows e precisa de Administrador.
+// Windows only; requires Administrator.
 package capture

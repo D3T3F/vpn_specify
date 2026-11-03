@@ -9,15 +9,15 @@ import (
 	"testing"
 )
 
-// Prepara um teste manual de ponta a ponta na pasta de dados real.
-// VPN_SPECIFY_E2E_OVPN=<arquivo> VPN_SPECIFY_E2E_IPCHECK=<ipcheck.exe> go test -run E2ESetup ./internal/store
+// Prepares a manual end-to-end test in the real data folder.
+// VPN_SPECIFY_E2E_OVPN=<file> VPN_SPECIFY_E2E_IPCHECK=<ipcheck.exe> go test -run E2ESetup ./internal/store
 func TestE2ESetup(t *testing.T) {
 	ovpn, ipcheck := os.Getenv("VPN_SPECIFY_E2E_OVPN"), os.Getenv("VPN_SPECIFY_E2E_IPCHECK")
 	if ovpn == "" || ipcheck == "" {
-		t.Skip("teste manual")
+		t.Skip("manual test")
 	}
 	wd, _ := os.Getwd()
-	st, err := OpenAt(filepath.Join(wd, "..", "..", "data")) // data da raiz do projeto
+	st, err := OpenAt(filepath.Join(wd, "..", "..", "data")) // the project root's data folder
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestE2ESetup(t *testing.T) {
 	}
 	out := filepath.Join(filepath.Dir(ipcheck), "out.txt")
 	a, err := st.SaveApp(AppEntry{
-		Name: "ipcheck (teste)", Path: filepath.Join(os.Getenv("WINDIR"), `System32\cmd.exe`),
+		Name: "ipcheck (test)", Path: filepath.Join(os.Getenv("WINDIR"), `System32\cmd.exe`),
 		Args: fmt.Sprintf(`/c ""%s" > "%s""`, ipcheck, out), Config: c.Name, Capture: []string{"ipcheck.exe"},
 	})
 	if err != nil {

@@ -34,11 +34,11 @@ func TestNewer(t *testing.T) {
 		}
 	}
 	if IsRelease("dev") || !IsRelease("v1.2.3") {
-		t.Error("IsRelease errado")
+		t.Error("IsRelease is wrong")
 	}
 }
 
-// fakeGitHub serve /releases/latest e os arquivos da release.
+// fakeGitHub serves /releases/latest and the release files.
 func fakeGitHub(t *testing.T, tag string, files map[string][]byte, digests map[string]string) {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -59,10 +59,10 @@ func fakeGitHub(t *testing.T, tag string, files map[string][]byte, digests map[s
 	}
 	mux.HandleFunc("/api/latest", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") == "" {
-			http.Error(w, "sem User-Agent", http.StatusForbidden)
+			http.Error(w, "no User-Agent", http.StatusForbidden)
 			return
 		}
-		fmt.Fprintf(w, `{"tag_name":%q,"name":"vpn_specify","body":"novidades","html_url":"https://github.com/D3T3F/vpn_specify/releases/tag/%s","assets":[%s]}`,
+		fmt.Fprintf(w, `{"tag_name":%q,"name":"vpn_specify","body":"news","html_url":"https://github.com/D3T3F/vpn_specify/releases/tag/%s","assets":[%s]}`,
 			tag, tag, strings.Join(assets, ","))
 	})
 }
@@ -74,12 +74,12 @@ func TestCheckAndDownload(t *testing.T) {
 	version.Version = "1.0.0"
 	t.Cleanup(func() { version.Version = old })
 
-	pkg := []byte("conteúdo do pacote")
+	pkg := []byte("package content")
 	name := AssetName("1.2.0")
 	fakeGitHub(t, "v1.2.0", map[string][]byte{name: pkg, "outro.zip": []byte("x")}, map[string]string{name: "sha256:" + sha(pkg)})
 
 	rel, err := Check(context.Background())
-	if err != nil || rel == nil || rel.Version != "1.2.0" || rel.Asset.Name != name || rel.Notes != "novidades" {
+	if err != nil || rel == nil || rel.Version != "1.2.0" || rel.Asset.Name != name || rel.Notes != "news" {
 		t.Fatalf("Check = %+v, %v", rel, err)
 	}
 	var lastDone int64
@@ -89,33 +89,33 @@ func TestCheckAndDownload(t *testing.T) {
 	}
 	defer os.RemoveAll(filepath.Dir(p))
 	if b, _ := os.ReadFile(p); !bytes.Equal(b, pkg) || lastDone != int64(len(pkg)) {
-		t.Fatalf("download errado: %q (progresso %d)", b, lastDone)
+		t.Fatalf("wrong download: %q (progress %d)", b, lastDone)
 	}
 
-	// hash diferente: recusa e não deixa arquivo
+	// different hash: refused, no file left behind
 	bad := rel.Asset
-	bad.SHA256 = sha([]byte("outra coisa"))
+	bad.SHA256 = sha([]byte("something else"))
 	if _, err := Download(context.Background(), bad, nil); err == nil || !strings.Contains(err.Error(), "SHA-256") {
-		t.Errorf("hash errado deveria falhar: %v", err)
+		t.Errorf("a wrong hash should fail: %v", err)
 	}
-	// sem hash: recusa
+	// no hash: refused
 	bad.SHA256 = ""
 	if _, err := Download(context.Background(), bad, nil); err == nil {
-		t.Error("sem hash deveria falhar")
+		t.Error("no hash should fail")
 	}
-	// endereço fora das releases do repositório: recusa
+	// an address outside the repository's releases: refused
 	bad = rel.Asset
 	bad.URL = "https://example.com/" + name
 	if _, err := Download(context.Background(), bad, nil); err == nil {
-		t.Error("URL de fora deveria falhar")
+		t.Error("an outside URL should fail")
 	}
 
-	// mesma versão: nada a fazer
+	// same version: nothing to do
 	version.Version = "1.2.0"
 	if rel, err := Check(context.Background()); err != nil || rel != nil {
-		t.Errorf("mesma versão: %+v, %v", rel, err)
+		t.Errorf("same version: %+v, %v", rel, err)
 	}
-	// build de desenvolvimento nunca atualiza
+	// a development build never updates
 	version.Version = "dev"
 	if rel, err := Check(context.Background()); err != nil || rel != nil {
 		t.Errorf("dev: %+v, %v", rel, err)
@@ -126,7 +126,7 @@ func TestSHA256SUMSFallback(t *testing.T) {
 	old := version.Version
 	version.Version = "1.0.0"
 	t.Cleanup(func() { version.Version = old })
-	pkg := []byte("pacote")
+	pkg := []byte("package")
 	name := AssetName("1.1.0")
 	sums := []byte(sha(pkg) + "  " + name + "\n")
 	fakeGitHub(t, "v1.1.0", map[string][]byte{name: pkg, "SHA256SUMS": sums}, nil)
@@ -138,7 +138,7 @@ func TestSHA256SUMSFallback(t *testing.T) {
 
 func TestExtract(t *testing.T) {
 	dir := t.TempDir()
-	// zip com o setup dentro de uma pasta
+	// zip with the setup inside a folder
 	zp := filepath.Join(dir, "a.zip")
 	var zb bytes.Buffer
 	zw := zip.NewWriter(&zb)
@@ -153,25 +153,25 @@ func TestExtract(t *testing.T) {
 	if b, _ := os.ReadFile(out); string(b) != "MZsetup" {
 		t.Errorf("zip: %q", b)
 	}
-	if err := extractZipFile(zp, "naoexiste", out); err == nil {
-		t.Error("arquivo ausente deveria falhar")
+	if err := extractZipFile(zp, "missing", out); err == nil {
+		t.Error("a missing file should fail")
 	}
 
-	// zip do Compress-Archive (PowerShell 5.1): separador "\" (é o caso da v1.0.0)
+	// zip from Compress-Archive (PowerShell 5.1): "\" separator (the case of v1.0.0)
 	zb.Reset()
 	zw = zip.NewWriter(&zb)
 	w, _ = zw.Create(`vpn_specify-1.0.0-win64\vpn_specify-setup.exe`)
-	w.Write([]byte("MZantigo"))
+	w.Write([]byte("MZold"))
 	zw.Close()
 	os.WriteFile(zp, zb.Bytes(), 0o644)
 	if err := extractZipFile(zp, "vpn_specify-setup.exe", out); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(out); string(b) != "MZantigo" {
-		t.Errorf("zip com barra invertida: %q", b)
+	if b, _ := os.ReadFile(out); string(b) != "MZold" {
+		t.Errorf("zip with backslashes: %q", b)
 	}
 
-	// tar.gz como o do build.ps1 -Linux
+	// tar.gz like the one from build.ps1 -Linux
 	tp := filepath.Join(dir, "a.tar.gz")
 	var tb bytes.Buffer
 	gz := gzip.NewWriter(&tb)

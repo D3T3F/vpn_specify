@@ -13,7 +13,7 @@ func TestEnableDisableXDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	exe := "/opt/meus apps/vpn_specify"
 	if Enabled() {
-		t.Fatal("não deveria existir ainda")
+		t.Fatal("should not exist yet")
 	}
 	if err := Enable(exe); err != nil {
 		t.Fatal(err)
@@ -23,18 +23,18 @@ func TestEnableDisableXDG(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(b), `Exec="/opt/meus apps/vpn_specify" autostart`+"\n") || !strings.Contains(string(b), "Type=Application") {
-		t.Errorf("conteúdo:\n%s", b)
+		t.Errorf("content:\n%s", b)
 	}
 	if filepath.Base(filepath.Dir(File())) != "autostart" || !Enabled() {
-		t.Error("lugar errado ou não habilitado")
+		t.Error("wrong place or not enabled")
 	}
-	if err := Enable(exe); err != nil { // de novo: atualiza sem erro
+	if err := Enable(exe); err != nil { // again: updates without error
 		t.Fatal(err)
 	}
 	if err := Disable(); err != nil || Enabled() {
 		t.Fatalf("Disable: %v", err)
 	}
-	if err := Disable(); err != nil { // já removido: ok
+	if err := Disable(); err != nil { // already removed: fine
 		t.Fatal(err)
 	}
 }

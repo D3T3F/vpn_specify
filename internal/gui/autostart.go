@@ -1,24 +1,28 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"vpn_specify/internal/autostart"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/store"
+	"vpn_specify/internal/tunnel"
 )
 
-// Apps que abrem com o sistema: cada app tem a opção "Abrir junto com o
-// sistema"; o sistema tem uma entrada só (internal/autostart) que roda
-// "vpn_specify autostart" ao entrar na conta, e o agente abre todos os apps
-// marcados (que usam a mesma VPN).
+// Apps that start with the system: each app has an "Open with the system"
+// option; the system has a single entry (internal/autostart) that runs
+// "vpn_specify autostart" at sign-in, and the agent opens every marked app
+// (they all use the same VPN).
 
-// syncAutostart cria a entrada do sistema se há apps marcados (sempre
-// apontando para este executável, que pode ter mudado de pasta) e a remove
-// se não há nenhum.
+// syncAutostart creates the system entry when apps are marked (always
+// pointing at this executable, which may have moved) and removes it when
+// none is.
 func syncAutostart(st *store.Store) error {
 	if len(st.AutostartApps()) == 0 {
 		return autostart.Disable()
@@ -30,26 +34,26 @@ func syncAutostart(st *store.Store) error {
 	return autostart.Enable(exe)
 }
 
-// syncAutostartAfterSave: depois de salvar/remover um app; o erro vai para a
-// tela, mas o app já foi salvo.
+// syncAutostartAfterSave: after saving/removing an app; the error goes to the
+// window, but the app is already saved.
 func syncAutostartAfterSave(st *store.Store) error {
 	if err := syncAutostart(st); err != nil {
-		log.Printf("inicialização com o sistema: %v", err)
-		return fmt.Errorf("o app foi salvo, mas não consegui configurar a inicialização com o sistema: %w", err)
+		log.Printf("start with the system: %v", err)
+		return i18n.Wrap(err, "the app was saved, but starting it with the system could not be set up")
 	}
 	return nil
 }
 
-// runAutostart abre os apps marcados, em ordem. Logo depois do logon a rede
-// pode ainda não estar pronta: cada app é tentado até 4 vezes, com pausas.
-// report recebe os erros que sobrarem.
+// runAutostart opens the marked apps, in order. Right after logon the network
+// may not be ready yet: each app is tried up to 4 times, with pauses. report
+// receives the errors left over.
 func runAutostart(st *store.Store, launch func(store.AppEntry) error, report func(string)) {
 	apps := st.AutostartApps()
 	if len(apps) == 0 {
-		log.Printf("nenhum app marcado para abrir com o sistema")
+		log.Printf("no app marked to start with the system")
 		return
 	}
-	log.Printf("abrindo com o sistema: %d app(s)", len(apps))
+	log.Printf("starting with the system: %d app(s)", len(apps))
 	var failed []string
 	for _, app := range apps {
 		var err error
@@ -57,7 +61,7 @@ func runAutostart(st *store.Store, launch func(store.AppEntry) error, report fun
 			if err = launch(app); err == nil {
 				break
 			}
-			log.Printf("abrir %s com o sistema (tentativa %d): %v", app.Name, attempt, err)
+			log.Printf("starting %s with the system (attempt %d): %v", app.Name, attempt, err)
 			if !retryable(err) {
 				break
 			}
@@ -70,17 +74,17 @@ func runAutostart(st *store.Store, launch func(store.AppEntry) error, report fun
 		}
 	}
 	if len(failed) > 0 {
-		report("Não consegui abrir na VPN ao iniciar o sistema:\n\n" + strings.Join(failed, "\n"))
+		report(i18n.T("Could not open in the VPN when the system started:") + "\n\n" + strings.Join(failed, "\n"))
 	}
 }
 
-// retryable: falhas que tentar de novo não resolve (senha de administrador
-// recusada, credenciais faltando, VPN ou programa inexistente) não repetem,
-// para não pedir a senha várias vezes seguidas.
+// retryable: failures that retrying cannot fix (administrator password
+// refused, missing credentials, missing program or app) are not repeated, so
+// the password is not asked several times in a row.
 func retryable(err error) bool {
-	msg := strings.ToLower(err.Error())
-	for _, s := range []string{"permissão", "usuário e senha", "não existe", "not found", "no such file", "está ativa"} {
-		if strings.Contains(msg, s) {
+	for _, e := range []error{tunnel.ErrAdminDenied, tunnel.ErrNeedsCredentials, tunnel.ErrNeedsAdmin,
+		store.ErrAppNotFound, os.ErrNotExist, exec.ErrNotFound} {
+		if errors.Is(err, e) {
 			return false
 		}
 	}

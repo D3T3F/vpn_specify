@@ -15,12 +15,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ---------- Elevação ----------
+// ---------- Elevation ----------
 
-// IsElevated informa se o processo roda como Administrador.
+// IsElevated reports whether the process runs as Administrator.
 func IsElevated() bool { return windows.GetCurrentProcessToken().IsElevated() }
 
-// ElevateSelf reabre este executável como Administrador (prompt do UAC).
+// ElevateSelf reopens this executable as Administrator (UAC prompt).
 func ElevateSelf(args []string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -37,10 +37,10 @@ func ElevateSelf(args []string) error {
 	return windows.ShellExecute(0, verb, file, params, dir, windows.SW_SHOWNORMAL)
 }
 
-// ---------- Abrir apps como usuário normal (sem Administrador) ----------
+// ---------- Starting apps as the normal user (not Administrator) ----------
 
-// StartUnelevated inicia o programa com o token do Explorer, ou seja, como o
-// usuário normal. Sem isso, o Discord abriria como Administrador.
+// StartUnelevated starts the program with Explorer's token, that is, as the
+// normal user. Otherwise Discord would open as Administrator.
 func StartUnelevated(path, rawArgs, dir string, env []string) (uint32, error) {
 	cmdline := windows.EscapeArg(path)
 	if strings.TrimSpace(rawArgs) != "" {
@@ -62,12 +62,12 @@ func StartUnelevated(path, rawArgs, dir string, env []string) (uint32, error) {
 	}
 	ph, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
-		return 0, fmt.Errorf("abrindo explorer: %w", err)
+		return 0, fmt.Errorf("opening explorer: %w", err)
 	}
 	defer windows.CloseHandle(ph)
 	var tok windows.Token
 	if err := windows.OpenProcessToken(ph, windows.TOKEN_DUPLICATE, &tok); err != nil {
-		return 0, fmt.Errorf("token do explorer: %w", err)
+		return 0, fmt.Errorf("explorer token: %w", err)
 	}
 	defer tok.Close()
 	var dup windows.Token

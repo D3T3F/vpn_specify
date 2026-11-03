@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ---------- Diálogo "Escolher pasta" e perguntas ----------
+// ---------- "Choose folder" dialog and questions ----------
 
 var (
 	shell32                  = windows.NewLazySystemDLL("shell32.dll")
@@ -31,10 +31,10 @@ type browseInfo struct {
 	iImage         int32
 }
 
-// BrowseFolder mostra o diálogo nativo de escolha de pasta, começando em initial.
+// BrowseFolder shows the native folder picker, starting at initial.
 func BrowseFolder(owner uintptr, title, initial string) (string, bool) {
 	browseCallbackOnce.Do(func() {
-		// BFFM_INITIALIZED: seleciona a pasta inicial (lpData aponta para o caminho UTF-16)
+		// BFFM_INITIALIZED: select the initial folder (lpData points to the UTF-16 path)
 		browseCallback = windows.NewCallback(func(hwnd, msg, lParam, lpData uintptr) uintptr {
 			if msg == 1 && lpData != 0 {
 				procSendMessageW.Call(hwnd, 0x0400+103 /*BFFM_SETSELECTIONW*/, 1, lpData)
@@ -66,15 +66,15 @@ func BrowseFolder(owner uintptr, title, initial string) (string, bool) {
 	return windows.UTF16ToString(buf), true
 }
 
-// Respostas de Ask.
+// Answers of Ask.
 const (
 	AnswerCancel = 2
 	AnswerYes    = 6
 	AnswerNo     = 7
 )
 
-// Ask faz uma pergunta Sim/Não (ou Sim/Não/Cancelar) e devolve AnswerYes,
-// AnswerNo ou AnswerCancel.
+// Ask asks a Yes/No (or Yes/No/Cancel) question and returns AnswerYes,
+// AnswerNo or AnswerCancel.
 func Ask(title, text string, withCancel bool) int {
 	flags := uintptr(0x4 | 0x20) // MB_YESNO | MB_ICONQUESTION
 	if withCancel {

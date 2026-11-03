@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ---------- Diálogo "Abrir arquivo" ----------
+// ---------- "Open file" dialog ----------
 
 type openFileName struct {
 	lStructSize       uint32
@@ -37,8 +37,8 @@ type openFileName struct {
 	FlagsEx           uint32
 }
 
-// OpenFileDialog mostra o diálogo nativo. filters: pares "descrição", "*.ext;*.ext".
-// noDeref: ao escolher um atalho .lnk, devolve o próprio .lnk.
+// OpenFileDialog shows the native dialog. filters: pairs "description", "*.ext;*.ext".
+// noDeref: when a .lnk shortcut is chosen, return the .lnk itself.
 func OpenFileDialog(owner uintptr, title, initialDir string, noDeref bool, filters ...string) (string, bool) {
 	var f []uint16
 	for _, s := range filters {
@@ -70,7 +70,7 @@ func OpenFileDialog(owner uintptr, title, initialDir string, noDeref bool, filte
 	return windows.UTF16ToString(buf), true
 }
 
-// ---------- Mensagens e janela ----------
+// ---------- Messages and window ----------
 
 func MessageBox(title, text string, flags uintptr) {
 	t, _ := windows.UTF16PtrFromString(title)
@@ -78,8 +78,8 @@ func MessageBox(title, text string, flags uintptr) {
 	_, _, _ = procMessageBoxW.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), flags|0x00010000) // MB_SETFOREGROUND
 }
 
-// SetWindowIcons aplica o ícone embutido (recurso 1) na barra de título e na
-// barra de tarefas, cada um no tamanho certo para o DPI atual.
+// SetWindowIcons applies the embedded icon (resource 1) to the title bar and
+// the taskbar, each at the right size for the current DPI.
 func SetWindowIcons(hwnd uintptr) {
 	var hinst windows.Handle
 	if windows.GetModuleHandleEx(0, nil, &hinst) != nil {
@@ -99,5 +99,5 @@ func BringToFront(hwnd uintptr) {
 	_, _, _ = procSetForegroundWindow.Call(hwnd)
 }
 
-// AllowForeground deixa a instância em execução trazer a janela para a frente.
+// AllowForeground lets the running instance bring its window to the front.
 func AllowForeground() { _, _, _ = procAllowSetForegroundWindow.Call(uintptr(^uint32(0))) }

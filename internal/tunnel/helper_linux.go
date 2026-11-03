@@ -18,23 +18,24 @@ import (
 	"vpn_specify/internal/platform"
 )
 
-// RunOpenVPNHelper é o "vpn_specify openvpn-helper <openvpn> args...": roda
-// como root (via pkexec, aberto pela interface gráfica sem root) e só:
-//   - inicia o openvpn com os argumentos recebidos, repassando a saída;
-//   - deixa o rp_filter da interface tun em modo loose quando ela aparece
-//     (o agente, sem root, não consegue);
-//   - encerra o openvpn (SIGTERM, limpo) quando a entrada padrão fecha, ou
-//     seja, quando o agente desconecta ou morre. Um processo comum não pode
-//     mandar sinais para um processo root, por isso o aviso vem pela entrada.
+// RunOpenVPNHelper is "vpn_specify openvpn-helper <openvpn> args...": it runs
+// as root (via pkexec, started by the graphical interface without root) and
+// only:
+//   - starts openvpn with the given arguments, passing its output through;
+//   - sets the tun interface's rp_filter to loose when it appears (the
+//     unprivileged agent cannot);
+//   - stops openvpn (SIGTERM, cleanly) when standard input closes, that is,
+//     when the agent disconnects or dies. A normal process cannot signal a
+//     root process, so the notice comes through the input.
 func RunOpenVPNHelper(args []string) error {
 	if len(args) < 1 {
-		return errors.New("uso: vpn_specify openvpn-helper <openvpn> [args...]")
+		return errors.New("usage: vpn_specify openvpn-helper <openvpn> [args...]")
 	}
 	if os.Geteuid() != 0 {
-		return errors.New("openvpn-helper precisa rodar como root")
+		return errors.New("openvpn-helper must run as root")
 	}
 	if filepath.Base(args[0]) != "openvpn" {
-		return fmt.Errorf("openvpn-helper só executa o openvpn, não %q", args[0])
+		return fmt.Errorf("openvpn-helper only runs openvpn, not %q", args[0])
 	}
 	cmd := exec.Command(args[0], args[1:]...)
 	platform.KillWithParent(cmd)

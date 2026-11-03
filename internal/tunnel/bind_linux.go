@@ -9,16 +9,19 @@ import (
 	"os"
 	"syscall"
 
+	"vpn_specify/internal/i18n"
+
 	"golang.org/x/sys/unix"
 )
 
-// No Linux o envio segue o modelo "weak host": ligar o socket ao IP do túnel
-// não basta, o kernel escolheria a rota padrão normal (de métrica menor) e o
-// pacote sairia pela rede comum com o IP do túnel como origem. Por isso os
-// sockets do proxy são presos à interface do túnel com SO_BINDTODEVICE
-// (o modo OpenVPN já roda como root, que é o que essa opção exige).
+// Linux sends with the "weak host" model: binding the socket to the tunnel IP
+// is not enough; the kernel would pick the normal default route (lower
+// metric) and the packet would leave through the regular network with the
+// tunnel IP as source. So the proxy sockets are bound to the tunnel
+// interface with SO_BINDTODEVICE (allowed for root, and for normal users
+// since kernel 5.7).
 
-// interfaceWithIP devolve o nome da interface que tem esse IP (ex.: tun0).
+// interfaceWithIP returns the name of the interface holding this IP (e.g. tun0).
 func interfaceWithIP(ip net.IP) (string, error) {
 	ifs, err := net.Interfaces()
 	if err != nil {
@@ -32,19 +35,19 @@ func interfaceWithIP(ip net.IP) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("nenhuma interface com o IP %s", ip)
+	return "", i18n.Error("no interface has the IP {0}", ip)
 }
 
-// prepareTunnelInterface descobre a interface do túnel e deixa o rp_filter
-// dela em modo "loose". Em distribuições com rp_filter estrito (Fedora, RHEL)
-// as respostas que chegam pelo túnel seriam descartadas, porque a melhor rota
-// de volta para a internet é a da rede normal, não a do túnel.
+// prepareTunnelInterface finds the tunnel interface and sets its rp_filter
+// to "loose". On distributions with strict rp_filter (Fedora, RHEL) replies
+// arriving through the tunnel would be dropped, because the best route back
+// to the internet is the normal network's, not the tunnel's.
 func prepareTunnelInterface(ip net.IP) (string, error) {
 	name, err := interfaceWithIP(ip)
 	if err != nil {
 		return "", err
 	}
-	if os.Geteuid() == 0 { // sem root, quem ajusta é o openvpn-helper
+	if os.Geteuid() == 0 { // without root, the openvpn-helper does it
 		setLooseRPFilter(name)
 	}
 	return name, nil
@@ -52,11 +55,11 @@ func prepareTunnelInterface(ip net.IP) (string, error) {
 
 func setLooseRPFilter(name string) {
 	if err := os.WriteFile("/proc/sys/net/ipv4/conf/"+name+"/rp_filter", []byte("2"), 0o644); err != nil {
-		log.Printf("aviso: não consegui ajustar o rp_filter de %s (%v); se as respostas não chegarem, rode: sysctl -w net.ipv4.conf.%s.rp_filter=2", name, err, name)
+		log.Printf("warning: could not set rp_filter of %s (%v); if replies do not arrive, run: sysctl -w net.ipv4.conf.%s.rp_filter=2", name, err, name)
 	}
 }
 
-// bindControl prende o socket à interface ifName.
+// bindControl binds the socket to the ifName interface.
 func bindControl(ifName string) func(network, address string, c syscall.RawConn) error {
 	if ifName == "" {
 		return nil
@@ -69,7 +72,7 @@ func bindControl(ifName string) func(network, address string, c syscall.RawConn)
 			return err
 		}
 		if serr == unix.EPERM {
-			return fmt.Errorf("SO_BINDTODEVICE %s: sem permissão (sem root, o Linux só permite a partir do kernel 5.7)", ifName)
+			return i18n.Error("SO_BINDTODEVICE {0}: permission denied (without root, Linux only allows it since kernel 5.7)", ifName)
 		}
 		if serr != nil {
 			return fmt.Errorf("SO_BINDTODEVICE %s: %w", ifName, serr)

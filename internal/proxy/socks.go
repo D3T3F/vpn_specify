@@ -17,7 +17,7 @@ import (
 	"vpn_specify/internal/tunnel"
 )
 
-// ---------- SOCKS5 (RFC 1928, apenas CONNECT sem autenticação) ----------
+// ---------- SOCKS5 (RFC 1928, no authentication) ----------
 
 func ServeSOCKS(ln net.Listener, tun tunnel.Tunnel, verbose bool) {
 	for {
@@ -64,7 +64,7 @@ func handleSOCKS(c net.Conn, tun tunnel.Tunnel, verbose bool) {
 			return
 		}
 		host = net.IP(b).String()
-	case 3: // nome de domínio (resolvido pela VPN)
+	case 3: // domain name (resolved through the VPN)
 		l, err := br.ReadByte()
 		if err != nil {
 			return

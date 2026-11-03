@@ -15,6 +15,7 @@ import (
 
 	vpnspecify "vpn_specify"
 	"vpn_specify/internal/brand"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/version"
 )
@@ -29,11 +30,11 @@ type progressState struct {
 	Dir     string `json:"dir"`
 }
 
-// RunInstaller mostra a tela do instalador. payload tem os arquivos que vão
-// para a pasta de instalação (vpn_specify.exe, windivert\..., etc.).
+// RunInstaller shows the installer window. payload has the files that go into
+// the installation folder (vpn_specify.exe, windivert\..., etc.).
 func RunInstaller(payload fs.FS) error {
 	if !platform.IsElevated() {
-		// Arquivos de Programas e o registro de desinstalação exigem Administrador.
+		// Program Files and the uninstall registry need Administrator.
 		return platform.ElevateSelf(os.Args[1:])
 	}
 	dataPath := filepath.Join(os.TempDir(), "vpn_specify-setup-webview")
@@ -43,13 +44,12 @@ func RunInstaller(payload fs.FS) error {
 		AutoFocus: true,
 		DataPath:  dataPath,
 		WindowOptions: webview2.WindowOptions{
-			Title: "Instalar vpn_specify " + version.Version, Width: 640, Height: 540, Center: true,
+			Title: i18n.T("Install vpn_specify") + " " + version.Version, Width: 640, Height: 540, Center: true,
 			IconId: 1,
 		},
 	})
 	if w == nil {
-		platform.MessageBox("Instalar vpn_specify", "Não consegui abrir o instalador: o Microsoft Edge WebView2 Runtime não está instalado.\n"+
-			"Baixe em https://developer.microsoft.com/microsoft-edge/webview2/", 0x10)
+		platform.MessageBox(i18n.T("Install vpn_specify"), i18n.T("Could not open the installer: the Microsoft Edge WebView2 Runtime is not installed.\nDownload it from {0}", "https://developer.microsoft.com/microsoft-edge/webview2/"), 0x10)
 		return nil
 	}
 	defer w.Destroy()
@@ -74,6 +74,12 @@ func RunInstaller(payload fs.FS) error {
 		}
 		return map[string]any{"dir": dir, "upgrade": upgrade, "version": version.Version, "license": vpnspecify.License}
 	}))
+	// vsSetLanguage changes the installer language right away; the choice is
+	// saved for the app when the installation succeeds.
+	must(w.Bind("vsSetLanguage", func(code string) i18n.PageState {
+		i18n.Set(code)
+		return i18n.State()
+	}))
 	must(w.Bind("vsBrowse", func(current string) (string, error) {
 		start := current
 		for start != "" {
@@ -87,7 +93,7 @@ func RunInstaller(payload fs.FS) error {
 			}
 			start = parent
 		}
-		p, ok := platform.BrowseFolder(hwnd, "Escolha onde instalar o vpn_specify", start)
+		p, ok := platform.BrowseFolder(hwnd, i18n.T("Choose where to install vpn_specify"), start)
 		if !ok {
 			return "", nil
 		}
@@ -99,13 +105,18 @@ func RunInstaller(payload fs.FS) error {
 		if running {
 			return nil
 		}
-		running, st = true, progressState{Message: "Preparando…"}
+		running, st = true, progressState{Message: i18n.T("Preparing…")}
 		go func() {
 			dir, err := Install(payload, o, func(msg string) {
 				mu.Lock()
 				st.Message = msg
 				mu.Unlock()
 			})
+			if err == nil && o.Language != "" {
+				if lerr := i18n.Save(o.Language); lerr != nil {
+					log.Printf("saving the language: %v", lerr)
+				}
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			running = false
@@ -128,7 +139,7 @@ func RunInstaller(payload fs.FS) error {
 		if launch && dir != "" {
 			exe := filepath.Join(dir, MainExe)
 			if _, err := platform.StartNormal(exe, `"`+exe+`"`, dir, nil); err != nil {
-				platform.MessageBox("vpn_specify", "Não consegui abrir o vpn_specify: "+err.Error(), 0x30)
+				platform.MessageBox("vpn_specify", i18n.T("Could not open vpn_specify: {0}", err), 0x30)
 			}
 		}
 		w.Terminate()
@@ -142,7 +153,7 @@ func RunInstaller(payload fs.FS) error {
 		}
 	}))
 
-	w.SetHtml(strings.ReplaceAll(setupHTML, "{{LOGO}}", brand.LogoDataURI()))
+	w.SetHtml(strings.NewReplacer("{{LOGO}}", brand.LogoDataURI(), "{{I18N_SCRIPT}}", i18n.PageScript()).Replace(setupHTML))
 	platform.BringToFront(hwnd)
 	w.Run()
 	return nil

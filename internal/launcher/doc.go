@@ -1,4 +1,4 @@
-// Package launcher abre programas configurados para usar os proxies locais:
-// navegadores Chromium e Firefox com perfil próprio, e qualquer outro
-// programa com as variáveis HTTP_PROXY/ALL_PROXY.
+// Package launcher opens programs configured to use the local proxies:
+// Chromium and Firefox browsers with their own profile, and any other
+// program with the HTTP_PROXY/ALL_PROXY variables.
 package launcher

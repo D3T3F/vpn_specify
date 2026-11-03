@@ -1,4 +1,4 @@
-// Package control é a API local (127.0.0.1, com token) pela qual uma
-// instância sem privilégios (ex.: um atalho "DiscordVPN") pede à instância
-// em execução para mostrar a janela ou abrir um app, sem novo prompt do UAC.
+// Package control is the local API (127.0.0.1, with a token) through which an
+// unprivileged instance (e.g. a "DiscordVPN" shortcut) asks the running
+// instance to show its window or open an app, without a new UAC prompt.
 package control

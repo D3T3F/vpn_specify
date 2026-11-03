@@ -1,4 +1,4 @@
-// Package paths decide onde ficam os dados do vpn_specify.
+// Package paths decides where vpn_specify keeps its data.
 package paths
 
 import (
@@ -7,12 +7,12 @@ import (
 	"runtime"
 )
 
-// DataDir devolve a pasta de dados:
-//   - modo portátil: <pasta do exe>\data, se essa pasta já existir (ou houver
-//     um arquivo "portable" ao lado do exe);
-//   - instalado: %LOCALAPPDATA%\vpn_specify (Arquivos de Programas não é
-//     gravável sem Administrador);
-//   - Linux/macOS: ~/.config/vpn_specify (ou $XDG_CONFIG_HOME/vpn_specify).
+// DataDir returns the data folder:
+//   - portable mode: <exe folder>\data, if that folder already exists (or
+//     there is a file named "portable" next to the exe);
+//   - installed on Windows: %LOCALAPPDATA%\vpn_specify (Program Files is not
+//     writable without Administrator);
+//   - Linux/macOS: ~/.config/vpn_specify (or $XDG_CONFIG_HOME/vpn_specify).
 func DataDir() string {
 	exe, err := os.Executable()
 	if err != nil {

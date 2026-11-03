@@ -10,12 +10,14 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"vpn_specify/internal/i18n"
 )
 
-// Binding mínimo do WinDivert 2.x (https://reqrypt.org/windivert.html),
-// carregado de WinDivert.dll ao lado do executável (ou em .\windivert\).
+// Minimal WinDivert 2.x binding (https://reqrypt.org/windivert.html),
+// loaded from WinDivert.dll next to the executable (or in .\windivert\).
 
-// divertAddr espelha WINDIVERT_ADDRESS (80 bytes).
+// divertAddr mirrors WINDIVERT_ADDRESS (80 bytes).
 type divertAddr struct {
 	Timestamp int64
 	Flags     uint32 // Layer:8 Event:8 Sniffed:1 Outbound:1 Loopback:1 Impostor:1 IPv6:1 ...
@@ -62,11 +64,11 @@ func loadWinDivert() error {
 		}
 	}
 	if found == "" {
-		return fmt.Errorf("WinDivert.dll e WinDivert64.sys não encontrados em %s nem em %s", dir, filepath.Join(dir, "windivert"))
+		return i18n.Error("WinDivert.dll and WinDivert64.sys not found in {0} or {1}", dir, filepath.Join(dir, "windivert"))
 	}
 	dll, err := windows.LoadDLL(filepath.Join(found, "WinDivert.dll"))
 	if err != nil {
-		return fmt.Errorf("carregando WinDivert.dll: %w", err)
+		return i18n.Wrap(err, "loading WinDivert.dll")
 	}
 	procs := []**windows.Proc{&wdOpen, &wdRecv, &wdSend, &wdClose, &wdShutdown, &wdChecksums}
 	names := []string{"WinDivertOpen", "WinDivertRecv", "WinDivertSend", "WinDivertClose", "WinDivertShutdown", "WinDivertHelperCalcChecksums"}
@@ -81,7 +83,7 @@ func loadWinDivert() error {
 	return nil
 }
 
-var errNoData error = windows.ERROR_NO_DATA // devolvido pelo Recv depois do Shutdown
+var errNoData error = windows.ERROR_NO_DATA // returned by Recv after Shutdown
 
 type divertHandle uintptr
 
@@ -93,18 +95,18 @@ func divertOpen(filter string) (divertHandle, error) {
 	if err != nil {
 		return 0, err
 	}
-	// layer 0 = WINDIVERT_LAYER_NETWORK, prioridade 0, flags 0
+	// layer 0 = WINDIVERT_LAYER_NETWORK, priority 0, flags 0
 	r, _, callErr := wdOpen.Call(uintptr(unsafe.Pointer(f)), 0, 0, 0)
 	if windows.Handle(r) == windows.InvalidHandle {
 		var en windows.Errno
 		if errors.As(callErr, &en) {
 			switch en {
 			case windows.ERROR_ACCESS_DENIED:
-				return 0, errors.New("WinDivert: acesso negado (rode como Administrador)")
+				return 0, i18n.Error("WinDivert: access denied (run as Administrator)")
 			case windows.ERROR_FILE_NOT_FOUND:
-				return 0, errors.New("WinDivert: driver WinDivert64.sys não encontrado")
+				return 0, i18n.Error("WinDivert: driver WinDivert64.sys not found")
 			case 577, 1275: // ERROR_INVALID_IMAGE_HASH, ERROR_DRIVER_BLOCKED
-				return 0, fmt.Errorf("WinDivert: o Windows bloqueou o driver (%v); verifique o antivírus/Integridade de Memória", en)
+				return 0, i18n.Error("WinDivert: Windows blocked the driver ({0}); check the antivirus / Memory Integrity", en)
 			}
 		}
 		return 0, fmt.Errorf("WinDivertOpen: %w", callErr)

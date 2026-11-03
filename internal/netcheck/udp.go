@@ -3,7 +3,6 @@ package netcheck
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -13,11 +12,12 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/proxy"
 )
 
-// SocksUDPExchange envia um datagrama para dst ("host:porta") via SOCKS5 UDP
-// ASSOCIATE e devolve a primeira resposta.
+// SocksUDPExchange sends a datagram to dst ("host:port") through SOCKS5 UDP
+// ASSOCIATE and returns the first reply.
 func SocksUDPExchange(socksAddr, dst string, payload []byte, timeout time.Duration) ([]byte, error) {
 	ctrl, err := net.DialTimeout("tcp", socksAddr, timeout)
 	if err != nil {
@@ -30,7 +30,7 @@ func SocksUDPExchange(socksAddr, dst string, payload []byte, timeout time.Durati
 	}
 	var m [2]byte
 	if _, err := io.ReadFull(ctrl, m[:]); err != nil || m[1] != 0 {
-		return nil, errors.New("handshake SOCKS falhou")
+		return nil, i18n.Error("SOCKS handshake failed")
 	}
 	if _, err := ctrl.Write([]byte{5, 3, 0, 1, 0, 0, 0, 0, 0, 0}); err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func SocksUDPExchange(socksAddr, dst string, payload []byte, timeout time.Durati
 		return nil, err
 	}
 	if rep[1] != 0 || rep[3] != 1 {
-		return nil, fmt.Errorf("UDP ASSOCIATE recusado (código %d)", rep[1])
+		return nil, i18n.Error("UDP ASSOCIATE refused (code {0})", rep[1])
 	}
 	relay := &net.UDPAddr{IP: net.IP(rep[4:8]), Port: int(binary.BigEndian.Uint16(rep[8:10]))}
 
@@ -75,8 +75,9 @@ func SocksUDPExchange(socksAddr, dst string, payload []byte, timeout time.Durati
 	return data, err
 }
 
-// IP público visto por UDP: consulta TXT o-o.myaddr.l.google.com direto no
-// servidor autoritativo do Google, que responde com o IP de origem do pacote.
+// Public IP seen over UDP: a TXT query for o-o.myaddr.l.google.com sent
+// straight to Google's authoritative server, which answers with the packet's
+// source IP.
 const myIPDNSServer = "216.239.32.10:53" // ns1.google.com
 
 func myIPQuery() (id uint16, pkt []byte) {
@@ -97,14 +98,14 @@ func parseMyIPAnswer(id uint16, b []byte) (string, error) {
 		return "", err
 	}
 	if m.ID != id {
-		return "", errors.New("resposta com ID errado")
+		return "", errors.New("reply with the wrong ID")
 	}
 	for _, a := range m.Answers {
 		if t, ok := a.Body.(*dnsmessage.TXTResource); ok && len(t.TXT) > 0 {
 			return strings.TrimSpace(t.TXT[0]), nil
 		}
 	}
-	return "", errors.New("resposta sem TXT")
+	return "", errors.New("reply without TXT")
 }
 
 func UDPDirect() (string, error) {

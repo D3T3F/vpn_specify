@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Instalar vpn_specify</title>
+<title>Install vpn_specify</title>
 <link rel="icon" href="{{LOGO}}">
 <style>
 :root {
@@ -23,10 +23,12 @@ header { display: flex; align-items: center; gap: 14px; padding: 20px 26px; back
 header img { width: 44px; height: 44px; }
 header h1 { margin: 0; font-size: 19px; font-weight: 650; }
 header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+header .grow { flex: 1; }
 main { flex: 1; min-height: 0; overflow: auto; padding: 22px 26px; display: grid; gap: 16px; align-content: start; }
 label.field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .row { display: flex; gap: 8px; }
-input[type=text] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; width: 100%; }
+input[type=text], select { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; width: 100%; }
+header select { width: auto; padding: 5px 8px; }
 label.check { display: flex; gap: 9px; align-items: center; cursor: pointer; }
 .checks { display: grid; gap: 10px; }
 button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; padding: 7px 16px; cursor: pointer; font-weight: 550; white-space: nowrap; }
@@ -42,54 +44,77 @@ footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 26px;
 .mark { font-weight: 700; font-size: 18px; flex: none; }
 .hidden { display: none !important; }
 a { color: var(--accent); }
-pre.license { margin: 0; max-height: 170px; overflow: auto; font: 11.5px/1.45 "Cascadia Mono", Consolas, monospace; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; }
-code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; overflow-wrap: anywhere; }
+pre.license { margin: 0; max-height: 170px; overflow: auto; font: 11.5px/1.45 "Cascadia Mono", Consolas, monospace; background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre-wrap; direction: ltr; text-align: left; }
+code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; overflow-wrap: anywhere; direction: ltr; unicode-bidi: embed; }
 </style>
+<script>{{I18N_SCRIPT}}</script>
 </head>
 <body>
 <header>
   <img src="{{LOGO}}" alt="">
-  <div><h1>Instalar o vpn_specify</h1><p id="sub">VPN só para os apps que você escolher.</p></div>
+  <div class="grow"><h1 data-i18n>Install vpn_specify</h1><p id="sub"></p></div>
+  <select id="lang" onchange="changeLanguage(this.value)" aria-label="Language"></select>
 </header>
 
 <main id="pgOptions">
-  <label class="field">Pasta de instalação
-    <div class="row"><input type="text" id="dir" spellcheck="false"><button onclick="browse()">Procurar…</button></div>
+  <label class="field"><span data-i18n>Installation folder</span>
+    <div class="row"><input type="text" id="dir" spellcheck="false"><button onclick="browse()" data-i18n>Browse…</button></div>
   </label>
   <div class="checks">
-    <label class="check"><input type="checkbox" id="desktop" checked> Criar atalho na Área de Trabalho</label>
-    <label class="check"><input type="checkbox" id="startMenu" checked> Criar atalho no Menu Iniciar (aparece na pesquisa do Windows)</label>
+    <label class="check"><input type="checkbox" id="desktop" checked> <span data-i18n>Create a desktop shortcut</span></label>
+    <label class="check"><input type="checkbox" id="startMenu" checked> <span data-i18n>Create a Start menu shortcut (shows up in Windows search)</span></label>
   </div>
-  <p class="hint">Nada é baixado da internet: todos os arquivos já estão no instalador.
-    Para conectar em VPNs OpenVPN (.ovpn) é preciso ter o OpenVPN instalado; WireGuard (.conf) funciona sem nada extra.</p>
-  <p class="hint">O vpn_specify é software livre, distribuído sob a licença MIT.
-    <a href="#" onclick="toggleLicense(); return false">Ver licença</a></p>
+  <p class="hint" data-i18n>Nothing is downloaded from the internet: all files are already in the installer. To connect to OpenVPN VPNs (.ovpn) OpenVPN must be installed; WireGuard (.conf) works without anything extra.</p>
+  <p class="hint"><span data-i18n>vpn_specify is free software, distributed under the MIT license.</span>
+    <a href="#" onclick="toggleLicense(); return false" data-i18n>See license</a></p>
   <pre id="license" class="license hidden"></pre>
 </main>
 
 <main id="pgProgress" class="hidden">
-  <div class="status" id="status"><div class="spinner" id="spin"></div><span class="mark hidden" id="mark"></span><div id="msg">Instalando…</div></div>
+  <div class="status" id="status"><div class="spinner" id="spin"></div><span class="mark hidden" id="mark"></span><div id="msg"></div></div>
   <div id="doneExtra" class="hidden checks">
-    <p class="hint">Instalado em <code id="doneDir"></code>. Para desinstalar, use Configurações › Aplicativos › Aplicativos instalados.</p>
-    <label class="check"><input type="checkbox" id="launch" checked> Abrir o vpn_specify agora</label>
+    <p class="hint"><span id="doneText"></span> <code id="doneDir"></code></p>
+    <p class="hint" data-i18n>To uninstall, use Settings › Apps › Installed apps.</p>
+    <label class="check"><input type="checkbox" id="launch" checked> <span data-i18n>Open vpn_specify now</span></label>
   </div>
 </main>
 
 <footer>
-  <button id="btnCancel" onclick="vsClose()">Cancelar</button>
-  <button id="btnMain" class="primary" onclick="install()">Instalar</button>
+  <button id="btnCancel" onclick="vsClose()"></button>
+  <button id="btnMain" class="primary" onclick="install()"></button>
 </footer>
 
 <script>
 const $ = id => document.getElementById(id);
-let phase = "options";
+let phase = "options", info = null;
+
+async function changeLanguage(code) {
+  setI18n(await vsSetLanguage(code));
+  render();
+}
+
+// render fills in the texts that depend on the state (the static ones are
+// translated by applyI18n through data-i18n).
+function render() {
+  if (!info) return;
+  $("sub").textContent = t("Version {0}", info.version) + (info.upgrade ? " · " + t("updates the existing installation") : "");
+  const labels = {
+    options: [t("Cancel"), info.upgrade ? t("Update") : t("Install")],
+    progress: [t("Cancel"), info.upgrade ? t("Update") : t("Install")],
+    failed: [t("Close"), t("Back")],
+    done: [t("Close"), t("Finish")],
+  }[phase];
+  $("btnCancel").textContent = labels[0];
+  $("btnMain").textContent = labels[1];
+}
 
 (async () => {
-  const i = await vsInit();
-  $("dir").value = i.dir;
-  $("license").textContent = i.license;
-  $("sub").textContent = `Versão ${i.version}` + (i.upgrade ? " · atualiza a instalação existente" : "");
-  if (i.upgrade) $("btnMain").textContent = "Atualizar";
+  info = await vsInit();
+  $("dir").value = info.dir;
+  $("license").textContent = info.license;
+  $("lang").innerHTML = I18N_LANGUAGES.map(l => `<option value="${l.code}">${l.name}</option>`).join("");
+  $("lang").value = I18N_LANG;
+  render();
 })();
 
 function toggleLicense() { $("license").classList.toggle("hidden"); }
@@ -103,8 +128,9 @@ async function install() {
   if (phase === "done") { vsFinish($("launch").checked); return; }
   if (phase === "failed") { show("options"); return; }
   show("progress");
+  $("msg").textContent = t("Installing…");
   try {
-    await vsInstall({ dir: $("dir").value, desktop: $("desktop").checked, startMenu: $("startMenu").checked });
+    await vsInstall({ dir: $("dir").value, desktop: $("desktop").checked, startMenu: $("startMenu").checked, language: $("lang").value });
   } catch (e) { finish({ error: String(e) }); return; }
   poll();
 }
@@ -124,19 +150,20 @@ function finish(p) {
     $("status").className = "status err";
     $("mark").textContent = "✕";
     $("msg").textContent = p.error;
-    $("btnMain").textContent = "Voltar";
     $("btnCancel").disabled = false;
-    $("btnCancel").textContent = "Fechar";
+    render();
     return;
   }
   phase = "done";
   $("status").className = "status ok";
   $("mark").textContent = "✓";
-  $("msg").textContent = "O vpn_specify foi instalado.";
+  $("msg").textContent = t("vpn_specify was installed.");
+  $("doneText").textContent = t("Installed in:");
   $("doneDir").textContent = p.dir;
   $("doneExtra").classList.remove("hidden");
   $("btnCancel").classList.add("hidden");
-  $("btnMain").textContent = "Concluir";
+  $("lang").disabled = true;
+  render();
 }
 
 function show(pg) {
@@ -153,9 +180,8 @@ function show(pg) {
   } else {
     $("btnMain").disabled = false;
     $("btnCancel").disabled = false;
-    $("btnCancel").textContent = "Cancelar";
-    $("btnMain").textContent = "Instalar";
   }
+  render();
 }
 </script>
 </body>

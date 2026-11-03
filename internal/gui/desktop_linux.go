@@ -15,17 +15,18 @@ import (
 	"syscall"
 
 	"vpn_specify/internal/brand"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 )
 
-// Integração com o desktop Linux (padrões freedesktop.org): os atalhos são
-// arquivos .desktop, os apps instalados vêm dos .desktop do sistema, e o
-// seletor de arquivos é o zenity (GNOME) ou o kdialog (KDE).
+// Linux desktop integration (freedesktop.org standards): shortcuts are
+// .desktop files, installed apps come from the system's .desktop files, and
+// the file picker is zenity (GNOME) or kdialog (KDE).
 
-// ---------- argumentos ----------
+// ---------- arguments ----------
 
-// splitArgs separa uma linha de comando como o shell faria (aspas simples,
-// duplas e barra invertida), sem expandir variáveis.
+// splitArgs splits a command line like the shell would (single and double
+// quotes, backslash), without expanding variables.
 func splitArgs(s string) []string {
 	var out []string
 	var cur strings.Builder
@@ -72,7 +73,7 @@ func splitArgs(s string) []string {
 	return out
 }
 
-// joinArgs é o inverso de splitArgs (para mostrar e salvar os argumentos).
+// joinArgs is the inverse of splitArgs (to show and save the arguments).
 func joinArgs(args []string) string {
 	var parts []string
 	for _, a := range args {
@@ -85,7 +86,7 @@ func joinArgs(args []string) string {
 	return strings.Join(parts, " ")
 }
 
-// desktopQuote escapa um argumento para a chave Exec de um .desktop.
+// desktopQuote escapes an argument for the Exec key of a .desktop file.
 func desktopQuote(a string) string {
 	if a != "" && !strings.ContainsAny(a, " \t\n\"'\\><~|&;$*?#()`%") {
 		return a
@@ -94,7 +95,7 @@ func desktopQuote(a string) string {
 	return `"` + r.Replace(a) + `"`
 }
 
-// ---------- arquivos .desktop ----------
+// ---------- .desktop files ----------
 
 type desktopEntry struct {
 	ID, File                         string
@@ -103,7 +104,7 @@ type desktopEntry struct {
 	OnlyShowIn, NotShowIn, EntryType string
 }
 
-// unescapeValue trata os escapes de valores .desktop (\s \n \t \r \\).
+// unescapeValue handles the escapes of .desktop values (\s \n \t \r \\).
 func unescapeValue(v string) string {
 	return strings.NewReplacer(`\s`, " ", `\n`, "\n", `\t`, "\t", `\r`, "\r", `\\`, `\`).Replace(v)
 }
@@ -115,7 +116,7 @@ func parseDesktopFile(path string) (desktopEntry, error) {
 	}
 	defer f.Close()
 	e := desktopEntry{File: path}
-	lang := strings.SplitN(os.Getenv("LANG"), ".", 2)[0] // ex.: pt_BR
+	lang := strings.ReplaceAll(i18n.Current(), "-", "_") // the vpn_specify language, e.g. pt_BR
 	short, _, _ := strings.Cut(lang, "_")
 	var nameLang, nameShort, commentLang, commentShort string
 	section := ""
@@ -183,13 +184,13 @@ func parseDesktopFile(path string) (desktopEntry, error) {
 		}
 	}
 	if e.EntryType != "Application" || e.Exec == "" {
-		return e, errors.New("não é um aplicativo")
+		return e, errors.New("not an application")
 	}
 	return e, nil
 }
 
-// execCommand converte a chave Exec em programa + argumentos, tirando os
-// códigos de campo (%u, %F, ...), que o vpn_specify não usa.
+// execCommand turns the Exec key into program + arguments, dropping the
+// field codes (%u, %F, ...), which vpn_specify does not use.
 func (e desktopEntry) execCommand() (path string, args []string, err error) {
 	var parts []string
 	for _, a := range splitArgs(e.Exec) {
@@ -200,9 +201,9 @@ func (e desktopEntry) execCommand() (path string, args []string, err error) {
 		parts = append(parts, strings.ReplaceAll(a, "%%", "%"))
 	}
 	if len(parts) == 0 {
-		return "", nil, errors.New("Exec vazio")
+		return "", nil, errors.New("empty Exec")
 	}
-	if strings.EqualFold(filepath.Base(parts[0]), "env") { // "env VAR=x programa"
+	if strings.EqualFold(filepath.Base(parts[0]), "env") { // "env VAR=x program"
 		i := 1
 		for i < len(parts) && strings.Contains(parts[i], "=") {
 			i++
@@ -226,8 +227,8 @@ func dataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// dataDirs: onde procurar applications/ e icons/, do mais para o menos
-// prioritário (o usuário primeiro, depois flatpak, snap e o sistema).
+// dataDirs: where to look for applications/ and icons/, from most to least
+// important (the user first, then flatpak, snap and the system).
 func dataDirs() []string {
 	dirs := []string{dataHome()}
 	sys := os.Getenv("XDG_DATA_DIRS")
@@ -255,11 +256,11 @@ type installedApp struct {
 	Path    string `json:"path"`
 	Args    string `json:"args"`
 	WorkDir string `json:"workDir"`
-	Icon    string `json:"icon"`     // nome do ícone ou caminho (vai para o atalho)
-	IconURL string `json:"iconFile"` // arquivo do ícone, para a tela (vazio se não achou)
+	Icon    string `json:"icon"`     // icon name or path (goes into the shortcut)
+	IconURL string `json:"iconFile"` // icon file, for the window (empty if not found)
 }
 
-// listInstalledApps lê os .desktop visíveis (como o menu de aplicativos).
+// listInstalledApps reads the visible .desktop files (like the applications menu).
 func listInstalledApps() []installedApp {
 	desktop := strings.Split(strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP")), ":")
 	inDesktop := func(list string) bool {
@@ -281,9 +282,9 @@ func listInstalledApps() []installedApp {
 				return nil
 			}
 			rel, _ := filepath.Rel(root, p)
-			id := strings.ReplaceAll(rel, string(filepath.Separator), "-") // regra do padrão
+			id := strings.ReplaceAll(rel, string(filepath.Separator), "-") // rule from the standard
 			if seen[id] {
-				return nil // o primeiro (mais prioritário) vence
+				return nil // the first one (most important) wins
 			}
 			seen[id] = true
 			e, err := parseDesktopFile(p)
@@ -308,7 +309,7 @@ func listInstalledApps() []installedApp {
 	return out
 }
 
-// appFromDesktopFile: o usuário escolheu um .desktop no seletor de arquivos.
+// appFromDesktopFile: the user chose a .desktop file in the file picker.
 func appFromDesktopFile(p string) (*pickedApp, error) {
 	e, err := parseDesktopFile(p)
 	if err != nil {
@@ -316,14 +317,14 @@ func appFromDesktopFile(p string) (*pickedApp, error) {
 	}
 	path, args, err := e.execCommand()
 	if err != nil {
-		return nil, fmt.Errorf("%s: programa não encontrado (%v)", filepath.Base(p), err)
+		return nil, i18n.Error("{0}: program not found ({1})", filepath.Base(p), err)
 	}
 	return &pickedApp{Name: e.Name, Path: path, Args: joinArgs(args), WorkDir: e.Path, Icon: e.Icon,
 		Capture: []string{filepath.Base(path)}}, nil
 }
 
-// resolveIcon acha o arquivo de um ícone do tema (busca simplificada:
-// hicolor nos tamanhos comuns, depois pixmaps). Vazio se não achar.
+// resolveIcon finds the file of a theme icon (simplified lookup: hicolor in
+// the common sizes, then pixmaps). Empty if not found.
 func resolveIcon(name string) string {
 	if name == "" {
 		return ""
@@ -361,11 +362,11 @@ func resolveIcon(name string) string {
 	return ""
 }
 
-// ---------- atalhos ----------
+// ---------- shortcuts ----------
 
 func applicationsDir() string { return filepath.Join(dataHome(), "applications") }
 
-// desktopDir: a Área de Trabalho do usuário (xdg-user-dir, que respeita o idioma).
+// desktopDir: the user's desktop folder (xdg-user-dir, which follows the language).
 func desktopDir() string {
 	if out, err := exec.Command("xdg-user-dir", "DESKTOP").Output(); err == nil {
 		if d := strings.TrimSpace(string(out)); d != "" {
@@ -376,7 +377,7 @@ func desktopDir() string {
 	return filepath.Join(home, "Desktop")
 }
 
-// logoIconPath grava o logotipo do vpn_specify para os atalhos usarem.
+// logoIconPath writes the vpn_specify logo for the shortcuts to use.
 func logoIconPath() string {
 	p := filepath.Join(dataHome(), "vpn_specify", "vpn_specify.png")
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err == nil {
@@ -385,8 +386,8 @@ func logoIconPath() string {
 	return p
 }
 
-// writeDesktopFile cria um atalho .desktop. Na Área de Trabalho ele precisa
-// ser executável e, no GNOME, marcado como confiável para abrir com clique.
+// writeDesktopFile creates a .desktop shortcut. On the desktop it must be
+// executable and, on GNOME, marked as trusted to open with a click.
 func writeDesktopFile(path, name, comment, execLine, icon string) error {
 	if icon == "" {
 		icon = logoIconPath()
@@ -408,24 +409,24 @@ func writeDesktopFile(path, name, comment, execLine, icon string) error {
 	return nil
 }
 
-// ---------- seletor de arquivos ----------
+// ---------- file picker ----------
 
-var errNoFileDialog = errors.New("não achei um seletor de arquivos (instale o zenity ou o kdialog); você também pode digitar o caminho do programa no campo Programa")
+var errNoFileDialog = i18n.Sentinel("no file picker found (install zenity or kdialog); you can also type the program path in the Program field")
 
-// pickFile abre o seletor de arquivos do sistema. ok=false se cancelou.
-// patterns são globs (ex.: "*.desktop").
+// pickFile opens the system file picker. ok=false if canceled.
+// patterns are globs (e.g. "*.desktop").
 func pickFile(title, dir, filterName string, patterns []string) (string, bool, error) {
 	var cmd *exec.Cmd
 	if p, err := exec.LookPath("zenity"); err == nil {
 		args := []string{"--file-selection", "--title=" + title, "--filename=" + strings.TrimSuffix(dir, "/") + "/"}
 		if len(patterns) > 0 {
-			args = append(args, "--file-filter="+filterName+" | "+strings.Join(patterns, " "), "--file-filter=Todos os arquivos | *")
+			args = append(args, "--file-filter="+filterName+" | "+strings.Join(patterns, " "), "--file-filter="+i18n.T("All files")+" | *")
 		}
 		cmd = exec.Command(p, args...)
 	} else if p, err := exec.LookPath("kdialog"); err == nil {
 		filter := ""
 		if len(patterns) > 0 {
-			filter = strings.Join(patterns, " ") + "|" + filterName + "\n*|Todos os arquivos"
+			filter = strings.Join(patterns, " ") + "|" + filterName + "\n*|" + i18n.T("All files")
 		}
 		cmd = exec.Command(p, "--title", title, "--getopenfilename", dir, filter)
 	} else {
@@ -435,7 +436,7 @@ func pickFile(title, dir, filterName string, patterns []string) (string, bool, e
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) && ee.ExitCode() == 1 {
-			return "", false, nil // cancelado
+			return "", false, nil // canceled
 		}
 		return "", false, err
 	}
@@ -443,10 +444,10 @@ func pickFile(title, dir, filterName string, patterns []string) (string, bool, e
 	return p, p != "", nil
 }
 
-// ---------- processos ----------
+// ---------- processes ----------
 
-// startDetached abre um programa fora da sessão do vpn_specify (ele continua
-// aberto se o vpn_specify fechar). Rodando via sudo, abre como o usuário.
+// startDetached starts a program outside the vpn_specify session (it stays
+// open if vpn_specify exits). When running through sudo, it opens as the user.
 func startDetached(path string, args []string, dir string, env []string) (int, error) {
 	cmd := exec.Command(path, args...)
 	cmd.Dir, cmd.Env = dir, env
@@ -456,23 +457,23 @@ func startDetached(path string, args []string, dir string, env []string) (int, e
 	if fi, err := os.Stat(cmd.Dir); err != nil || !fi.IsDir() {
 		cmd.Dir = ""
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // grupo de processos próprio (pgid = pid)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // its own process group (pgid = pid)
 	if su := platform.InvokingUser(); su != nil {
 		su.Apply(cmd)
 	}
 	if err := cmd.Start(); err != nil {
 		return 0, err
 	}
-	go cmd.Wait() // evita processo zumbi
+	go cmd.Wait() // avoid a zombie process
 	return cmd.Process.Pid, nil
 }
 
-// anyRunning diz se ainda existe algum processo nos grupos pgids (os
-// processos abertos pelo vpn_specify e seus filhos) ou com um dos nomes de
-// executável em names.
+// anyRunning reports whether some process is still alive in the pgids
+// groups (the processes opened by vpn_specify and their children) or has one
+// of the executable names in names.
 func anyRunning(pgids map[int]bool, names map[string]bool) bool {
 	ents, _ := os.ReadDir("/proc")
-	short := map[string]bool{} // /proc/<pid>/comm guarda só 15 caracteres
+	short := map[string]bool{} // /proc/<pid>/comm keeps only 15 characters
 	for n := range names {
 		if len(n) > 15 {
 			n = n[:15]
@@ -488,7 +489,7 @@ func anyRunning(pgids map[int]bool, names map[string]bool) bool {
 		if err != nil {
 			continue
 		}
-		// formato: pid (comm) estado ppid pgrp ...; o comm pode ter espaços
+		// format: pid (comm) state ppid pgrp ...; comm may contain spaces
 		s := string(b)
 		i, j := strings.IndexByte(s, '('), strings.LastIndexByte(s, ')')
 		if i < 0 || j < i {
@@ -511,11 +512,11 @@ func anyRunning(pgids map[int]bool, names map[string]bool) bool {
 	return false
 }
 
-// openWithDefault abre uma pasta ou URL no programa padrão (xdg-open).
+// openWithDefault opens a folder or URL in the default program (xdg-open).
 func openWithDefault(target string) error {
 	p, err := exec.LookPath("xdg-open")
 	if err != nil {
-		return errors.New("xdg-open não encontrado")
+		return i18n.Error("xdg-open not found")
 	}
 	_, err = startDetached(p, []string{target}, "", nil)
 	return err

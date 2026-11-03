@@ -4,6 +4,6 @@ package platform
 
 import "os/exec"
 
-// KillWithParent: no Windows o vínculo é feito depois do Start, com
-// BindChildToUs (Job Object); nos outros sistemas não há equivalente simples.
+// KillWithParent: on Windows the link is made after Start, with
+// BindChildToUs (Job Object); other systems have no simple equivalent.
 func KillWithParent(cmd *exec.Cmd) {}

@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,14 +11,16 @@ import (
 	"sync"
 	"time"
 
+	"vpn_specify/internal/i18n"
+
 	"vpn_specify/internal/tunnel"
 )
 
-// ---------- Encaminhamento de portas (-L) ----------
+// ---------- Port forwarding (-L) ----------
 //
-// -L udp:5353=10.0.0.5:53   porta UDP local 5353 -> 10.0.0.5:53 dentro da VPN
+// -L udp:5353=10.0.0.5:53   local UDP port 5353 -> 10.0.0.5:53 inside the VPN
 // -L tcp:127.0.0.1:3389=srv:3389
-// Funciona com qualquer programa: basta apontá-lo para a porta local.
+// Works with any program: just point it at the local port.
 
 type Forward struct {
 	Proto, Local, Remote string
@@ -38,23 +39,23 @@ func (l *ForwardList) Set(s string) error {
 	}
 	local, remote, ok := strings.Cut(s, "=")
 	if !ok {
-		return errors.New("formato: [tcp|udp:]portaLocal=host:porta")
+		return i18n.Error("format: [tcp|udp:]localPort=host:port")
 	}
 	if _, err := strconv.Atoi(local); err == nil {
 		local = "127.0.0.1:" + local
 	}
 	if _, _, err := net.SplitHostPort(local); err != nil {
-		return fmt.Errorf("endereço local inválido %q", local)
+		return i18n.Error("invalid local address {0}", strconv.Quote(local))
 	}
 	if _, _, err := net.SplitHostPort(remote); err != nil {
-		return fmt.Errorf("destino inválido %q (use host:porta)", remote)
+		return i18n.Error("invalid destination {0} (use host:port)", strconv.Quote(remote))
 	}
 	f.Local, f.Remote = local, remote
 	*l = append(*l, f)
 	return nil
 }
 
-// ListenForward só abre a porta local (antes de conectar a VPN, para falhar rápido).
+// ListenForward only opens the local port (before connecting, to fail fast).
 func ListenForward(f Forward) (io.Closer, error) {
 	if f.Proto == "tcp" {
 		return net.Listen("tcp", f.Local)
@@ -66,7 +67,7 @@ func ListenForward(f Forward) (io.Closer, error) {
 	return net.ListenUDP("udp", la)
 }
 
-// StartForward abre a porta local e serve em segundo plano.
+// StartForward opens the local port and serves in the background.
 func StartForward(f Forward, tun tunnel.Tunnel, verbose bool) (io.Closer, error) {
 	c, err := ListenForward(f)
 	if err != nil {
@@ -107,8 +108,8 @@ func ServeForward(c io.Closer, f Forward, tun tunnel.Tunnel, verbose bool) {
 
 const UDPIdleTimeout = 2 * time.Minute
 
-// serveUDPForward faz um "NAT": cada endereço de origem local ganha seu
-// próprio socket dentro da VPN, assim as respostas voltam para quem enviou.
+// serveUDPForward does a "NAT": each local source address gets its own
+// socket inside the VPN, so replies go back to whoever sent the request.
 func serveUDPForward(pc *net.UDPConn, tun tunnel.Tunnel, f Forward, verbose bool) {
 	host, portStr, _ := net.SplitHostPort(f.Remote)
 	port, _ := strconv.Atoi(portStr)

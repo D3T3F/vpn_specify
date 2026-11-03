@@ -31,7 +31,7 @@ func TestPrepareLinux(t *testing.T) {
 	os.MkdirAll(filepath.Dir(target), 0o755)
 	os.WriteFile(target, []byte("#!/bin/sh\necho 1.0.0\n"), 0o755)
 
-	// o executável novo roda e informa a versão certa: troca
+	// the new executable runs and reports the right version: replace
 	pkg := filepath.Join(dir, "ok.tar.gz")
 	writeTarGz(t, pkg, "#!/bin/sh\necho 1.2.0\n")
 	plan, err := prepareAt(pkg, "1.2.0", false, target)
@@ -42,20 +42,20 @@ func TestPrepareLinux(t *testing.T) {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(target); string(b) != "#!/bin/sh\necho 1.2.0\n" {
-		t.Errorf("não trocou: %q", b)
+		t.Errorf("not replaced: %q", b)
 	}
 	if fi, _ := os.Stat(target); fi.Mode()&0o111 == 0 {
-		t.Error("perdeu a permissão de execução")
+		t.Error("lost the execute permission")
 	}
 
-	// versão diferente da anunciada (ou binário que não roda): não troca
+	// a version other than announced (or a binary that does not run): no replace
 	bad := filepath.Join(dir, "bad", "x.tar.gz")
 	os.MkdirAll(filepath.Dir(bad), 0o755)
 	writeTarGz(t, bad, "#!/bin/sh\necho 9.9.9\n")
 	if _, err := prepareAt(bad, "1.3.0", false, target); err == nil {
-		t.Error("versão errada deveria falhar")
+		t.Error("a wrong version should fail")
 	}
 	if b, _ := os.ReadFile(target); string(b) != "#!/bin/sh\necho 1.2.0\n" {
-		t.Errorf("trocou mesmo com erro: %q", b)
+		t.Errorf("replaced despite the error: %q", b)
 	}
 }

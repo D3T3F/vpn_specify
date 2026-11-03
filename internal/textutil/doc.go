@@ -1,2 +1,2 @@
-// Package textutil tem pequenas funções de texto compartilhadas.
+// Package textutil has small shared text helpers.
 package textutil

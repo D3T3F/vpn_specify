@@ -9,15 +9,16 @@ import (
 	"strconv"
 	"strings"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/setup"
 )
 
-// Prepare extrai o vpn_specify-setup.exe do pacote. O Run inicia o
-// instalador, que espera este processo terminar e então:
-//   - /update: atualiza a instalação (mesma pasta, mantém os atalhos que existem);
-//   - /extract=<pasta>: cópia portátil, só troca os arquivos da pasta.
+// Prepare extracts vpn_specify-setup.exe from the package. Run starts the
+// installer, which waits for this process to end and then:
+//   - /update: updates the installation (same folder, keeps existing shortcuts);
+//   - /extract=<folder>: portable copy, only replaces the folder's files.
 //
-// Com relaunch, o instalador abre o vpn_specify de novo no fim.
+// With relaunch, the installer opens vpn_specify again at the end.
 func Prepare(archive, ver string, relaunch bool) (*Plan, error) {
 	setupExe := filepath.Join(filepath.Dir(archive), "vpn_specify-setup.exe")
 	if err := extractZipFile(archive, "vpn_specify-setup.exe", setupExe); err != nil {
@@ -29,12 +30,12 @@ func Prepare(archive, ver string, relaunch bool) (*Plan, error) {
 	}
 	exeDir := filepath.Dir(exe)
 	args := []string{"/wait=" + strconv.Itoa(os.Getpid())}
-	desc := "atualizar a instalação em " + exeDir
+	desc := i18n.T("update the installation in {0}", exeDir)
 	if inst := setup.InstalledDir(); inst != "" && strings.EqualFold(filepath.Clean(inst), filepath.Clean(exeDir)) {
 		args = append(args, "/update")
 	} else {
 		args = append(args, "/extract="+exeDir)
-		desc = "atualizar a cópia portátil em " + exeDir
+		desc = i18n.T("update the portable copy in {0}", exeDir)
 	}
 	if relaunch {
 		args = append(args, "/run")

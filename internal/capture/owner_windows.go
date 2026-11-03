@@ -10,8 +10,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Descobre qual processo é dono de uma porta local, pelas tabelas de
-// conexões do Windows (as mesmas que o netstat -ano usa).
+// Finds which process owns a local port, using the Windows connection
+// tables (the same ones netstat -ano uses).
 
 var (
 	iphlpapi        = windows.NewLazySystemDLL("iphlpapi.dll")
@@ -35,17 +35,17 @@ func ipTable(proc *windows.LazyProc, af, class uintptr) ([]byte, error) {
 		switch r {
 		case 0:
 			return buf, nil
-		case 122: // ERROR_INSUFFICIENT_BUFFER: size já foi atualizado
+		case 122: // ERROR_INSUFFICIENT_BUFFER: size was already updated
 			size += 4096
 		default:
-			return nil, fmt.Errorf("%s: erro %d", proc.Name, r)
+			return nil, fmt.Errorf("%s: error %d", proc.Name, r)
 		}
 	}
-	return nil, fmt.Errorf("%s: tabela mudando rápido demais", proc.Name)
+	return nil, fmt.Errorf("%s: table changing too fast", proc.Name)
 }
 
-// Layout das linhas (bytes): porta local em ordem de rede nos 2 primeiros
-// bytes do DWORD; PID no último DWORD.
+// Row layout (bytes): local port in network order in the first 2 bytes of
+// its DWORD; PID in the last DWORD.
 type tableLayout struct {
 	rowSize, portOff, pidOff int
 }
@@ -57,7 +57,7 @@ var (
 	layoutUDP6 = tableLayout{28, 20, 24} // MIB_UDP6ROW_OWNER_PID
 )
 
-// portOwner devolve o PID dono da porta local (0 se não achar).
+// portOwner returns the PID owning the local port (0 if not found).
 func portOwner(tcp, v6 bool, port uint16) uint32 {
 	proc, class, af, lay := procExtUDPTable, uintptr(udpTableOwner), uintptr(afInet), layoutUDP4
 	switch {
@@ -86,8 +86,8 @@ func portOwner(tcp, v6 bool, port uint16) uint32 {
 	return 0
 }
 
-// resetTCPConnections derruba as conexões TCP IPv4 estabelecidas dos PIDs
-// dados, para o app reconectar (agora capturado). Precisa de Administrador.
+// resetTCPConnections drops the established IPv4 TCP connections of the
+// given PIDs, so the app reconnects (now captured). Needs Administrator.
 func resetTCPConnections(pids map[uint32]string) int {
 	b, err := ipTable(procExtTCPTable, afInet, tcpTableOwnerAll)
 	if err != nil {
@@ -106,7 +106,7 @@ func resetTCPConnections(pids map[uint32]string) int {
 		if _, ok := pids[pid]; !ok || state != 5 { // 5 = ESTABLISHED
 			continue
 		}
-		var mib [20]byte // MIB_TCPROW: mesmos 5 primeiros DWORDs
+		var mib [20]byte // MIB_TCPROW: same first 5 DWORDs
 		copy(mib[:], row[:20])
 		binary.LittleEndian.PutUint32(mib[0:], 12) // MIB_TCP_STATE_DELETE_TCB
 		if r, _, _ := procSetTcpEntry.Call(uintptr(unsafe.Pointer(&mib[0]))); r == 0 {

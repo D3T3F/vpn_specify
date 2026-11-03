@@ -1,3 +1,3 @@
-// Package netcheck descobre o IP público, direto e pela VPN, em TCP (HTTP)
-// e UDP (DNS), para conferir se o tráfego realmente sai pela VPN.
+// Package netcheck finds the public IP, directly and through the VPN, over
+// TCP (HTTP) and UDP (DNS), to confirm the traffic really leaves via the VPN.
 package netcheck

@@ -2,11 +2,13 @@
 
 package gui
 
-import "errors"
+import "vpn_specify/internal/i18n"
 
-var errNoGUI = errors.New("a interface gráfica só existe no Windows; aqui use os comandos de terminal (vpn_specify help)")
+func errNoGUI() error {
+	return i18n.Error("the graphical interface is only available on Windows and Linux; use the terminal commands (vpn_specify help)")
+}
 
-func Main() error                   { return errNoGUI }
-func LaunchMain(id string) error    { return errNoGUI }
-func AgentMain(args []string) error { return errNoGUI }
-func AutostartMain() error          { return errNoGUI }
+func Main() error                   { return errNoGUI() }
+func LaunchMain(id string) error    { return errNoGUI() }
+func AgentMain(args []string) error { return errNoGUI() }
+func AutostartMain() error          { return errNoGUI() }

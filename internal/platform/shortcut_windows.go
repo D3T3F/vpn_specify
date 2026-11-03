@@ -12,15 +12,17 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows"
+
+	"vpn_specify/internal/i18n"
 )
 
-// ---------- Atalhos (.lnk) via WScript.Shell ----------
+// ---------- Shortcuts (.lnk) via WScript.Shell ----------
 
 func powershell(script string, env map[string]string) ([]byte, error) {
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 	HideConsole(cmd)
 	cmd.Env = os.Environ()
-	for k, v := range env { // valores passados por variável de ambiente: sem problemas de aspas
+	for k, v := range env { // values passed as environment variables: no quoting issues
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	out, err := cmd.Output()
@@ -50,10 +52,10 @@ func ResolveShortcut(lnk string) (shortcutInfo, error) {
 	}
 	var si shortcutInfo
 	if err := json.Unmarshal(out, &si); err != nil {
-		return shortcutInfo{}, fmt.Errorf("lendo atalho: %w", err)
+		return shortcutInfo{}, i18n.Wrap(err, "reading the shortcut")
 	}
 	if si.Target == "" {
-		return si, errors.New("este atalho não aponta para um .exe (talvez seja de um app da Microsoft Store); escolha o .exe")
+		return si, i18n.Error("this shortcut does not point to an .exe (it may be a Microsoft Store app); choose the .exe")
 	}
 	return si, nil
 }

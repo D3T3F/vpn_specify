@@ -10,23 +10,25 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
 	"vpn_specify/internal/control"
 	"vpn_specify/internal/engine"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/launcher"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/store"
 	"vpn_specify/internal/update"
 )
 
-// O agente no Linux faz o mesmo que no Windows (agent_windows.go): mantém a
-// VPN, abre os apps e se encerra sozinho quando eles fecham. As diferenças:
-//   - roda como usuário comum; só o OpenVPN pede a senha de administrador
-//     (pkexec), na hora de conectar;
-//   - a janela é uma página local (server_linux.go);
-//   - não há captura completa: todo app usa o modo proxy.
+// The Linux agent does the same as on Windows (agent_windows.go): keeps the
+// VPN, opens the apps and exits by itself when they close. The differences:
+//   - it runs as a normal user; only OpenVPN asks for the administrator
+//     password (pkexec), when connecting;
+//   - the window is a local page (server_linux.go);
+//   - there is no full capture: every app uses proxy mode.
 
 type agent struct {
 	store *store.Store
@@ -36,14 +38,14 @@ type agent struct {
 
 	mu         sync.Mutex
 	autoClose  bool
-	watch      map[string]bool // executáveis abertos pelo vpn_specify
-	pgids      map[int]bool    // grupos de processos abertos pelo vpn_specify
+	watch      map[string]bool // executables opened by vpn_specify
+	pgids      map[int]bool    // process groups opened by vpn_specify
 	lastLaunch time.Time
 	notice     string
-	showCh     chan bool // pedido de janela (autoClose)
+	showCh     chan bool // window request (autoClose)
 
 	upd    *updater
-	quitCh chan struct{} // atualização pronta: fechar o agente
+	quitCh chan struct{} // update ready: exit the agent
 	plan   *update.Plan  // aplicada depois de desconectar (veja runAgent)
 }
 
@@ -54,8 +56,8 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 		return err
 	}
 	a := &agent{store: st, eng: engine.New(), logs: &logRing{}, watch: map[string]bool{}, pgids: map[int]bool{}, showCh: make(chan bool, 4), quitCh: make(chan struct{}, 1)}
-	// registrado primeiro, roda por último: depois de desconectar e liberar
-	// as portas (no Linux, o Run troca este processo pela versão nova)
+	// registered first, runs last: after disconnecting and releasing the
+	// ports (on Linux, Run replaces this process with the new version)
 	defer a.runPlan()
 	a.upd = newUpdater(st, a.quitForUpdate, openWithDefault)
 	if lf, err := os.OpenFile(filepath.Join(st.Dir, "vpn_specify.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
@@ -71,7 +73,7 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 		"autostart": func(url.Values) error { go a.autostart(); return nil },
 	})
 	if err != nil {
-		// corrida: outra instância acabou de abrir
+		// race: another instance just started
 		if autostartNow {
 			return control.Call("autostart", nil)
 		}
@@ -84,10 +86,10 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 	defer a.eng.Disconnect()
 
 	if a.ui, err = newUIServer(a.api()); err != nil {
-		platform.MessageBox("vpn_specify", "Não consegui abrir a interface: "+err.Error(), 0x10)
+		platform.MessageBox("vpn_specify", i18n.T("Could not open the interface: {0}", err), 0x10)
 		return err
 	}
-	log.Printf("vpn_specify iniciado (dados em %s)", st.Dir)
+	log.Printf("vpn_specify started (data in %s)", st.Dir)
 	if show {
 		a.showCh <- false
 	}
@@ -95,9 +97,9 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 		go a.launchFromShortcut(launchID)
 	}
 	go a.upd.autoCheck()
-	go func() { // a entrada do sistema acompanha o executável atual
+	go func() { // the system entry follows the current executable
 		if err := syncAutostart(st); err != nil {
-			log.Printf("inicialização com o sistema: %v", err)
+			log.Printf("start with the system: %v", err)
 		}
 	}()
 	if autostartNow {
@@ -117,7 +119,7 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 				fmt.Fprintln(os.Stderr, err)
 				platform.MessageBox("vpn_specify", err.Error(), 0x10)
 			} else {
-				fmt.Fprintf(os.Stderr, "vpn_specify: janela em %s\n", a.ui.pageURL())
+				fmt.Fprintf(os.Stderr, "vpn_specify: window at %s\n", a.ui.pageURL())
 			}
 		case <-a.quitCh:
 			return nil
@@ -129,14 +131,14 @@ func runAgent(show bool, launchID string, autostartNow bool) error {
 	}
 }
 
-// quitForUpdate fecha a janela e o agente; runAgent desconecta e então
-// aplica a atualização.
+// quitForUpdate closes the window and the agent; runAgent disconnects and
+// then applies the update.
 func (a *agent) quitForUpdate(plan *update.Plan) {
 	a.mu.Lock()
 	a.plan = plan
 	a.mu.Unlock()
 	a.ui.broadcast("close")
-	time.Sleep(300 * time.Millisecond) // o evento chega antes de o servidor sumir
+	time.Sleep(300 * time.Millisecond) // the event arrives before the server goes away
 	select {
 	case a.quitCh <- struct{}{}:
 	default:
@@ -151,13 +153,14 @@ func (a *agent) runPlan() {
 		return
 	}
 	if err := plan.Run(); err != nil {
-		log.Printf("não consegui reabrir depois de atualizar: %v", err)
-		platform.MessageBox("vpn_specify", "A atualização foi instalada, mas não consegui reabrir o vpn_specify: "+err.Error(), 0x10)
+		log.Printf("could not reopen after updating: %v", err)
+		platform.MessageBox("vpn_specify", i18n.T("The update was installed, but vpn_specify could not be reopened: {0}", err), 0x10)
 	}
 }
 
-// autostart: "vpn_specify autostart" (XDG autostart, ao entrar na sessão)
-// abre os apps marcados para iniciar com o sistema, sem mostrar a janela.
+// autostart: "vpn_specify autostart" (XDG autostart, when the session
+// starts) opens the apps marked to start with the system, without showing the
+// window.
 func (a *agent) autostart() {
 	a.mu.Lock()
 	a.lastLaunch = time.Now()
@@ -177,8 +180,8 @@ func (a *agent) requestShow(autoClose bool) {
 	}
 }
 
-// shouldExit roda a cada 3s: decide se a instância termina (sem janela,
-// e a VPN desligada ou sem apps abertos por ela).
+// shouldExit runs every 3s: decides whether the instance exits (no window,
+// and the VPN off or without apps opened through it).
 func (a *agent) shouldExit() bool {
 	a.mu.Lock()
 	recent := time.Since(a.lastLaunch) < 30*time.Second
@@ -195,11 +198,11 @@ func (a *agent) shouldExit() bool {
 		return false
 	}
 	switch a.eng.Status().State {
-	case "conectando":
+	case engine.StateConnecting:
 		return false
-	case "conectado":
+	case engine.StateConnected:
 		if len(watch) == 0 && len(pgids) == 0 {
-			log.Printf("janela fechada e nenhum app aberto pela VPN: desconectando")
+			log.Printf("window closed and no app opened through the VPN: disconnecting")
 			a.eng.Disconnect()
 			return true
 		}
@@ -207,7 +210,7 @@ func (a *agent) shouldExit() bool {
 			return false
 		}
 		if !anyRunning(pgids, watch) {
-			log.Printf("os apps da VPN foram fechados: desconectando")
+			log.Printf("the VPN apps were closed: disconnecting")
 			a.eng.Disconnect()
 			return true
 		}
@@ -226,24 +229,24 @@ func (a *agent) setNotice(s string) {
 func (a *agent) launchFromShortcut(id string) {
 	app, ok := a.store.App(id)
 	if !ok {
-		platform.MessageBox("vpn_specify", "Este atalho aponta para um app que não existe mais no vpn_specify.", 0x10)
+		platform.MessageBox("vpn_specify", i18n.T("This shortcut points to an app that no longer exists in vpn_specify."), 0x10)
 		return
 	}
 	a.mu.Lock()
 	a.lastLaunch = time.Now()
 	a.mu.Unlock()
 	windowOpen := a.ui.isOpen()
-	if a.eng.Status().State != "conectado" && !windowOpen {
-		a.requestShow(true) // mostra o progresso enquanto conecta; fecha sozinha depois
+	if a.eng.Status().State != engine.StateConnected && !windowOpen {
+		a.requestShow(true) // shows the progress while connecting; closes by itself afterwards
 	}
 	if err := a.launchApp(app); err != nil {
-		log.Printf("erro ao abrir %s: %v", app.Name, err)
-		a.setNotice(fmt.Sprintf("Não consegui abrir %s: %v", app.Name, err))
+		log.Printf("error opening %s: %v", app.Name, err)
+		a.setNotice(i18n.T("Could not open {0}: {1}", app.Name, err))
 		a.mu.Lock()
 		a.autoClose = false
 		a.mu.Unlock()
 		if !a.ui.isOpen() {
-			platform.MessageBox("vpn_specify", fmt.Sprintf("Não consegui abrir %s:\n\n%v", app.Name, err), 0x10)
+			platform.MessageBox("vpn_specify", i18n.T("Could not open {0}:", app.Name)+"\n\n"+err.Error(), 0x10)
 		}
 		return
 	}
@@ -257,16 +260,16 @@ func (a *agent) launchFromShortcut(id string) {
 	}
 }
 
-// launchApp conecta (se preciso) e abre o app configurado para usar o proxy.
+// launchApp connects (if needed) and opens the app configured to use the proxy.
 func (a *agent) launchApp(app store.AppEntry) error {
 	a.mu.Lock()
 	a.lastLaunch = time.Now()
 	a.mu.Unlock()
 	st := a.eng.Status()
-	if (st.State == "conectado" || st.State == "conectando") && st.Config != app.Config {
-		return fmt.Errorf("a VPN %q está ativa e %s usa %q; desconecte antes", st.Config, app.Name, app.Config)
+	if (st.State == engine.StateConnected || st.State == engine.StateConnecting) && st.Config != app.Config {
+		return i18n.Error("the VPN {0} is active and {1} uses {2}; disconnect first", strconv.Quote(st.Config), app.Name, strconv.Quote(app.Config))
 	}
-	if st.State != "conectado" {
+	if st.State != engine.StateConnected {
 		path, opts, err := a.store.ConfigFor(app.Config)
 		if err != nil {
 			return err
@@ -279,7 +282,7 @@ func (a *agent) launchApp(app store.AppEntry) error {
 		}
 	}
 	if app.Mode == "capture" {
-		log.Printf("%s: a captura completa só existe no Windows; abrindo no modo proxy", app.Name)
+		log.Printf("%s: full capture only exists on Windows; opening in proxy mode", app.Name)
 	}
 
 	lo := launcher.Options{Socks: a.eng.SocksAddr, HTTP: a.eng.HTTPAddr, Profile: "app-" + app.ID, Chromium: true}
@@ -287,9 +290,9 @@ func (a *agent) launchApp(app store.AppEntry) error {
 	if err != nil {
 		return err
 	}
-	// as flags de proxy vão depois dos argumentos do app: assim funcionam
-	// também com "flatpak run ... com.app.Id", que repassa ao app o que vem
-	// depois do id
+	// the proxy flags go after the app's arguments: that way they also work
+	// with "flatpak run ... com.app.Id", which passes to the app whatever
+	// comes after the id
 	args := append(splitArgs(app.Args), pre...)
 	env := append(os.Environ(), launcher.ProxyEnv(lo)...)
 	pid, err := startDetached(app.Path, args, app.WorkDir, env)
@@ -301,7 +304,7 @@ func (a *agent) launchApp(app store.AppEntry) error {
 	a.pgids[pid] = true
 	a.lastLaunch = time.Now()
 	a.mu.Unlock()
-	log.Printf("%s aberto na VPN (pid %d, modo proxy)", app.Name, pid)
+	log.Printf("%s opened in the VPN (pid %d, proxy mode)", app.Name, pid)
 	return nil
 }
 
@@ -309,20 +312,20 @@ func (a *agent) waitConnected(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		switch st := a.eng.Status(); st.State {
-		case "conectado":
+		case engine.StateConnected:
 			return nil
-		case "erro":
+		case engine.StateError:
 			return errors.New(st.Error)
-		case "desconectado":
-			return errors.New("conexão cancelada")
+		case engine.StateDisconnected:
+			return engine.ErrCanceled
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return errors.New("tempo esgotado conectando")
+	return i18n.Error("timed out connecting")
 }
 
-// configInUse: a VPN está conectada (ou conectando) agora.
+// configInUse: the VPN is connected (or connecting) right now.
 func (a *agent) configInUse(name string) bool {
 	s := a.eng.Status()
-	return s.Config == name && (s.State == "conectado" || s.State == "conectando")
+	return s.Config == name && (s.State == engine.StateConnected || s.State == engine.StateConnecting)
 }

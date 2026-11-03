@@ -33,14 +33,14 @@ func (e *captureEngine) handleUDP(pkt []byte, ihl int, addr *divertAddr) bool {
 		}
 		pc, err := e.tun.ListenUDP()
 		if err != nil {
-			log.Printf("captura udp: %v", err)
+			log.Printf("capture udp: %v", err)
 			return false
 		}
 		f = &udpFlow{lport: sport, pc: pc}
 		e.mu.Lock()
 		e.udp[sport] = f
 		e.mu.Unlock()
-		log.Printf("captura udp %s :%d -> %s (pela VPN)", name, sport, net.JoinHostPort(net.IP(pkt[16:20]).String(), strconv.Itoa(int(dport))))
+		log.Printf("capture udp %s :%d -> %s (through the VPN)", name, sport, net.JoinHostPort(net.IP(pkt[16:20]).String(), strconv.Itoa(int(dport))))
 		go e.udpReadLoop(f)
 	}
 	copy(f.local[:], pkt[12:16])
@@ -49,10 +49,10 @@ func (e *captureEngine) handleUDP(pkt []byte, ihl int, addr *divertAddr) bool {
 
 	dst := &net.UDPAddr{IP: net.IPv4(pkt[16], pkt[17], pkt[18], pkt[19]).To4(), Port: int(dport)}
 	_, _ = f.pc.WriteTo(l4[8:ulen], dst)
-	return false // o original não sai pela rede normal
+	return false // the original never leaves through the normal network
 }
 
-// udpReadLoop recebe as respostas da VPN e injeta como pacotes de entrada.
+// udpReadLoop receives the VPN replies and injects them as inbound packets.
 func (e *captureEngine) udpReadLoop(f *udpFlow) {
 	defer func() {
 		e.mu.Lock()
@@ -78,7 +78,7 @@ func (e *captureEngine) udpReadLoop(f *udpFlow) {
 			continue
 		}
 		pkt := buf[:28+n]
-		// cabeçalho IPv4
+		// IPv4 header
 		pkt[0], pkt[1] = 0x45, 0
 		binary.BigEndian.PutUint16(pkt[2:], uint16(len(pkt)))
 		binary.BigEndian.PutUint16(pkt[4:], uint16(rand.Uint32()))
@@ -87,7 +87,7 @@ func (e *captureEngine) udpReadLoop(f *udpFlow) {
 		binary.BigEndian.PutUint16(pkt[10:], 0)
 		copy(pkt[12:16], ua.IP.To4())
 		copy(pkt[16:20], f.local[:])
-		// cabeçalho UDP
+		// UDP header
 		binary.BigEndian.PutUint16(pkt[20:], uint16(ua.Port))
 		binary.BigEndian.PutUint16(pkt[22:], f.lport)
 		binary.BigEndian.PutUint16(pkt[24:], uint16(8+n))
@@ -100,7 +100,7 @@ func (e *captureEngine) udpReadLoop(f *udpFlow) {
 	}
 }
 
-// janitor remove fluxos TCP encerrados ou parados.
+// janitor removes finished or idle TCP flows.
 func (e *captureEngine) janitor() {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()

@@ -9,18 +9,18 @@ func TestNormalizeDir(t *testing.T) {
 		`C:\Program Files\vpn_specify`:      `C:\Program Files\vpn_specify`,
 		`C:\Program Files\VPN_SPECIFY\`:     `C:\Program Files\VPN_SPECIFY`,
 		`D:\Apps`:                           `D:\Apps\vpn_specify`,
-		` "D:\Meus Apps\" `:                 `D:\Meus Apps\vpn_specify`,
+		` "D:\My Apps\" `:                   `D:\My Apps\vpn_specify`,
 		`E:\`:                               `E:\vpn_specify`,
 		`C:\Program Files\x\..\vpn_specify`: `C:\Program Files\vpn_specify`,
 	} {
 		got, err := NormalizeDir(in)
 		if err != nil || got != want {
-			t.Errorf("NormalizeDir(%q) = %q, %v; quer %q", in, got, err, want)
+			t.Errorf("NormalizeDir(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"", "   ", `relativo\pasta`, `\sem\unidade`} {
+	for _, bad := range []string{"", "   ", `relative\folder`, `\no\drive`} {
 		if _, err := NormalizeDir(bad); err == nil {
-			t.Errorf("NormalizeDir(%q) deveria falhar", bad)
+			t.Errorf("NormalizeDir(%q) should fail", bad)
 		}
 	}
 }

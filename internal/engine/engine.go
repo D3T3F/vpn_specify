@@ -1,27 +1,36 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
 	"vpn_specify/internal/capture"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/proxy"
 	"vpn_specify/internal/tunnel"
 )
 
-// Endereços padrão dos proxies locais.
+// Default addresses of the local proxies.
 const (
 	DefaultSocksAddr = "127.0.0.1:10800"
 	DefaultHTTPAddr  = "127.0.0.1:10801"
 )
 
+// Connection states (Status.State; also used by the web page).
+const (
+	StateDisconnected = "disconnected"
+	StateConnecting   = "connecting"
+	StateConnected    = "connected"
+	StateError        = "error"
+)
+
 type Status struct {
-	State    string   `json:"state"` // desconectado | conectando | conectado | erro
+	State    string   `json:"state"` // one of the State* constants
 	Config   string   `json:"config"`
 	Error    string   `json:"error"`
 	Since    int64    `json:"since"`
@@ -30,8 +39,8 @@ type Status struct {
 	HTTP     string   `json:"http"`
 }
 
-// Engine mantém uma conexão VPN com os proxies locais e (opcionalmente) a
-// captura por processo. Usado pelo `up` (CLI) e pela interface gráfica.
+// Engine keeps a VPN connection with the local proxies and (optionally)
+// per-process capture. Used by `up` (CLI) and by the graphical interface.
 type Engine struct {
 	SocksAddr, HTTPAddr string
 	Verbose             bool
@@ -41,11 +50,14 @@ type Engine struct {
 	tun     tunnel.Tunnel
 	closers []io.Closer
 	capture capture.Controller
-	gen     int // muda a cada conexão, para ignorar eventos de conexões antigas
+	gen     int // changes on each connection, to ignore events of older ones
 }
 
+// ErrCanceled: Disconnect was called while connecting.
+var ErrCanceled = i18n.Sentinel("connection canceled")
+
 func New() *Engine {
-	return &Engine{SocksAddr: DefaultSocksAddr, HTTPAddr: DefaultHTTPAddr, status: Status{State: "desconectado"}}
+	return &Engine{SocksAddr: DefaultSocksAddr, HTTPAddr: DefaultHTTPAddr, status: Status{State: StateDisconnected}}
 }
 
 func (e *Engine) Status() Status {
@@ -65,20 +77,20 @@ func (e *Engine) Tunnel() tunnel.Tunnel {
 	return e.tun
 }
 
-// Connect conecta (bloqueia até conectar ou falhar).
+// Connect connects (blocks until connected or failed).
 func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.Forward) error {
 	e.mu.Lock()
-	if e.status.State == "conectando" || e.status.State == "conectado" {
+	if e.status.State == StateConnecting || e.status.State == StateConnected {
 		cur := e.status.Config
 		e.mu.Unlock()
 		if cur == name {
 			return nil
 		}
-		return fmt.Errorf("a VPN %q já está ativa; desconecte antes", cur)
+		return i18n.Error("the VPN {0} is already active; disconnect it first", strconv.Quote(cur))
 	}
 	e.gen++
 	gen := e.gen
-	e.status = Status{State: "conectando", Config: name, Since: time.Now().Unix()}
+	e.status = Status{State: StateConnecting, Config: name, Since: time.Now().Unix()}
 	e.mu.Unlock()
 
 	fail := func(err error) error {
@@ -88,23 +100,23 @@ func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.F
 				c.Close()
 			}
 			e.closers = nil
-			e.status = Status{State: "erro", Config: name, Error: err.Error()}
+			e.status = Status{State: StateError, Config: name, Error: err.Error()}
 		}
 		e.mu.Unlock()
-		log.Printf("erro: %v", err)
+		log.Printf("error: %v", err)
 		return err
 	}
 
 	var closers []io.Closer
 	socksLn, err := net.Listen("tcp", e.SocksAddr)
 	if err != nil {
-		return fail(fmt.Errorf("não consegui abrir o proxy SOCKS em %s (outro vpn_specify rodando?): %w", e.SocksAddr, err))
+		return fail(i18n.Wrap(err, "could not open the SOCKS proxy on {0} (is another vpn_specify running?)", e.SocksAddr))
 	}
 	closers = append(closers, socksLn)
 	httpLn, err := net.Listen("tcp", e.HTTPAddr)
 	if err != nil {
 		socksLn.Close()
-		return fail(fmt.Errorf("não consegui abrir o proxy HTTP em %s: %w", e.HTTPAddr, err))
+		return fail(i18n.Wrap(err, "could not open the HTTP proxy on {0}", e.HTTPAddr))
 	}
 	closers = append(closers, httpLn)
 	fwdConns := make([]io.Closer, len(forwards))
@@ -114,7 +126,7 @@ func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.F
 			for _, c := range closers {
 				c.Close()
 			}
-			return fail(fmt.Errorf("encaminhamento %s: %w", f, err))
+			return fail(i18n.Wrap(err, "port forward {0}", f))
 		}
 		fwdConns[i] = c
 		closers = append(closers, c)
@@ -123,7 +135,7 @@ func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.F
 	e.closers = closers
 	e.mu.Unlock()
 
-	log.Printf("conectando em %q...", name)
+	log.Printf("connecting to %q...", name)
 	tun, err := tunnel.Open(path, o)
 	if err != nil {
 		return fail(err)
@@ -135,15 +147,15 @@ func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.F
 	}
 
 	e.mu.Lock()
-	if e.gen != gen { // Disconnect chamado enquanto conectava
+	if e.gen != gen { // Disconnect called while connecting
 		e.mu.Unlock()
 		tun.Close()
-		return errors.New("conexão cancelada")
+		return ErrCanceled
 	}
 	e.tun = tun
-	e.status = Status{State: "conectado", Config: name, Since: time.Now().Unix()}
+	e.status = Status{State: StateConnected, Config: name, Since: time.Now().Unix()}
 	e.mu.Unlock()
-	log.Printf("VPN %q conectada. O resto do computador continua fora da VPN.", name)
+	log.Printf("VPN %q connected. The rest of the computer stays outside the VPN.", name)
 
 	go func() {
 		err, ok := <-tun.Done()
@@ -161,7 +173,7 @@ func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.F
 	return nil
 }
 
-// EnsureCapture liga a captura (se ainda não estiver) e adiciona os nomes.
+// EnsureCapture starts the capture (if not running yet) and adds the names.
 func (e *Engine) EnsureCapture(names []string) error {
 	if len(names) == 0 {
 		return nil
@@ -169,7 +181,7 @@ func (e *Engine) EnsureCapture(names []string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.tun == nil {
-		return errors.New("VPN não conectada")
+		return i18n.Error("VPN not connected")
 	}
 	if e.capture != nil {
 		e.capture.AddNames(names)
@@ -190,12 +202,12 @@ func (e *Engine) disconnect(errMsg string) {
 	e.gen++
 	capt, tun, closers := e.capture, e.tun, e.closers
 	e.capture, e.tun, e.closers = nil, nil, nil
-	wasActive := e.status.State == "conectado" || e.status.State == "conectando"
+	wasActive := e.status.State == StateConnected || e.status.State == StateConnecting
 	cfg := e.status.Config
 	if errMsg != "" {
-		e.status = Status{State: "erro", Config: cfg, Error: errMsg}
+		e.status = Status{State: StateError, Config: cfg, Error: errMsg}
 	} else {
-		e.status = Status{State: "desconectado"}
+		e.status = Status{State: StateDisconnected}
 	}
 	e.mu.Unlock()
 
@@ -210,9 +222,9 @@ func (e *Engine) disconnect(errMsg string) {
 	}
 	if wasActive {
 		if errMsg != "" {
-			log.Printf("desconectado: %s", errMsg)
+			log.Printf("disconnected: %s", errMsg)
 		} else {
-			log.Printf("VPN %q desconectada.", cfg)
+			log.Printf("VPN %q disconnected.", cfg)
 		}
 	}
 }

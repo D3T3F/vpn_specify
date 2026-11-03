@@ -7,15 +7,16 @@ import (
 	"net/url"
 
 	"vpn_specify/internal/control"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 )
 
-var errNoDisplay = errors.New("sem ambiente gráfico (DISPLAY/WAYLAND_DISPLAY vazios); use os comandos de terminal (vpn_specify help)")
+var errNoDisplay = i18n.Sentinel("no graphical session (DISPLAY/WAYLAND_DISPLAY are empty); use the terminal commands (vpn_specify help)")
 
-// Main: "vpn_specify" sem argumentos.
+// Main: "vpn_specify" without arguments.
 func Main() error {
 	if err := control.Call("show", nil); err == nil {
-		return nil // já existe uma instância: ela mostra a janela
+		return nil // an instance already exists: it shows the window
 	}
 	if !hasDisplay() {
 		return errNoDisplay
@@ -23,7 +24,7 @@ func Main() error {
 	return runAgent(true, "", false)
 }
 
-// LaunchMain: "vpn_specify launch <id>" (usado pelos atalhos .desktop).
+// LaunchMain: "vpn_specify launch <id>" (used by the .desktop shortcuts).
 func LaunchMain(id string) error {
 	err := control.Call("launch", url.Values{"id": {id}})
 	if err == nil {
@@ -36,7 +37,7 @@ func LaunchMain(id string) error {
 	return runAgent(false, id, false)
 }
 
-// AutostartMain: "vpn_specify autostart", rodado ao entrar na sessão.
+// AutostartMain: "vpn_specify autostart", run when the session starts.
 func AutostartMain() error {
 	if err := control.Call("autostart", nil); err == nil {
 		return nil
@@ -44,7 +45,7 @@ func AutostartMain() error {
 	return runAgent(false, "", true)
 }
 
-// AgentMain: "vpn_specify agent [-launch <id>]" (no Linux é igual a Main).
+// AgentMain: "vpn_specify agent [-launch <id>]" (on Linux the same as Main).
 func AgentMain(args []string) error {
 	id := ""
 	if len(args) == 2 && args[0] == "-launch" {

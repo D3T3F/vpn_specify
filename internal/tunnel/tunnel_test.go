@@ -10,21 +10,21 @@ import (
 
 func TestParseWGConfigErrors(t *testing.T) {
 	if _, err := ParseWireGuardConfig([]byte("[Interface]\nAddress=10.0.0.2/32\n")); err == nil {
-		t.Fatal("esperava erro sem PrivateKey")
+		t.Fatal("expected an error without PrivateKey")
 	}
 }
 
 func TestSanitizeOVPN(t *testing.T) {
 	in := `client
 dev tun
-remote vpn.exemplo.com 1194
+remote vpn.example.com 1194
 redirect-gateway def1
 block-outside-dns
 dhcp-option DNS 10.1.1.1
 route 10.0.0.0 255.0.0.0
 <ca>
 -----BEGIN CERTIFICATE-----
-route isto-nao-e-diretiva
+route this-is-not-a-directive
 -----END CERTIFICATE-----
 </ca>
 `
@@ -32,11 +32,11 @@ route isto-nao-e-diretiva
 	s := string(out)
 	for _, bad := range []string{"\nredirect-gateway", "\nblock-outside-dns", "\ndhcp-option", "\nroute 10."} {
 		if strings.Contains(s, bad) {
-			t.Errorf("deveria ter removido %q:\n%s", bad, s)
+			t.Errorf("should have removed %q:\n%s", bad, s)
 		}
 	}
-	if !strings.Contains(s, "route isto-nao-e-diretiva") || !strings.Contains(s, "remote vpn.exemplo.com 1194") {
-		t.Errorf("removeu coisa demais:\n%s", s)
+	if !strings.Contains(s, "route this-is-not-a-directive") || !strings.Contains(s, "remote vpn.example.com 1194") {
+		t.Errorf("removed too much:\n%s", s)
 	}
 	if len(dns) != 1 || dns[0].String() != "10.1.1.1" {
 		t.Errorf("dns = %v", dns)
@@ -56,7 +56,7 @@ func TestParsePushReply(t *testing.T) {
 
 func TestLookupARealDNS(t *testing.T) {
 	if testing.Short() {
-		t.Skip("precisa de internet")
+		t.Skip("needs internet")
 	}
 	ips, err := lookupA(context.Background(), []netip.Addr{netip.MustParseAddr("1.1.1.1")}, "one.one.one.one",
 		func(ctx context.Context, n, a string) (net.Conn, error) {

@@ -1,23 +1,22 @@
-// Comando installer: gera o vpn_specify-setup.exe, um instalador offline com
-// os arquivos do programa embutidos (veja payload_embed.go).
+// Command installer builds vpn_specify-setup.exe, an offline installer with
+// the program files embedded (see payload_embed.go).
 //
-// Compile com scripts\build.ps1 -Dist, que prepara a pasta payload\ e usa a
-// tag "installer".
+// Build it with scripts\build.ps1 -Dist, which prepares the payload\ folder
+// and uses the "installer" tag.
 //
-// Sem argumentos mostra a tela de instalação. Instalação silenciosa:
+// Without arguments it shows the installer window. Silent install:
 //
-//	vpn_specify-setup.exe /silent [/dir=C:\Pasta] [/nodesktop] [/nostartmenu]
+//	vpn_specify-setup.exe /silent [/dir=C:\Folder] [/nodesktop] [/nostartmenu] [/lang=pt-BR]
 //
-// Usados pelo atualizador do vpn_specify (internal/update):
+// Used by the vpn_specify updater (internal/update):
 //
-//	/update            atualiza a instalação existente (mesma pasta e atalhos)
-//	/extract=C:\Pasta  só troca os arquivos de uma cópia portátil
-//	/wait=<pid>        espera esse processo fechar antes
-//	/run               abre o vpn_specify no fim
+//	/update             updates the existing installation (same folder and shortcuts)
+//	/extract=C:\Folder  only replaces the files of a portable copy
+//	/wait=<pid>         waits for that process to exit first
+//	/run                opens vpn_specify at the end
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,11 +26,13 @@ import (
 	"strings"
 	"time"
 
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/setup"
 )
 
 func main() {
+	i18n.Init()
 	files, err := payloadFS()
 	if err != nil {
 		fail(err, false)
@@ -42,7 +43,7 @@ func main() {
 	var waitPID uint64
 	o := setup.Options{Dir: setup.DefaultDir(), Desktop: true, StartMenu: true}
 	if d := setup.InstalledDir(); d != "" {
-		o.Dir = d // atualização: mesma pasta
+		o.Dir = d // update: same folder
 	}
 	for _, a := range os.Args[1:] {
 		low := strings.ToLower(a)
@@ -55,7 +56,7 @@ func main() {
 			o.Desktop = false
 		case low == "/nostartmenu":
 			o.StartMenu = false
-		// usados pelo atualizador do próprio vpn_specify (internal/update):
+		// used by vpn_specify's own updater (internal/update):
 		case low == "/update":
 			updateMode = true
 		case strings.HasPrefix(low, "/extract="):
@@ -64,8 +65,11 @@ func main() {
 			waitPID, _ = strconv.ParseUint(a[len("/wait="):], 10, 32)
 		case low == "/run":
 			run = true
+		case strings.HasPrefix(low, "/lang="):
+			o.Language = a[len("/lang="):]
+			i18n.Set(o.Language)
 		default:
-			fail(fmt.Errorf("opção desconhecida: %s", a), silent)
+			fail(i18n.Error("unknown option: {0}", a), silent)
 		}
 	}
 
@@ -90,12 +94,15 @@ func main() {
 	if err != nil {
 		fail(err, true)
 	}
-	fmt.Println("instalado em", dir)
+	if o.Language != "" {
+		_ = i18n.Save(o.Language)
+	}
+	fmt.Println(i18n.T("installed in {0}", dir))
 }
 
-// runUpdate: chamado pelo vpn_specify ao atualizar. Espera ele fechar,
-// instala sem perguntar nada (erros aparecem numa caixa de mensagem) e,
-// com /run, abre a versão nova.
+// runUpdate: called by vpn_specify when updating. It waits for it to exit,
+// installs without asking anything (errors appear in a message box) and,
+// with /run, opens the new version.
 func runUpdate(files fs.FS, installed bool, extractDir string, waitPID uint32, run bool) {
 	if !platform.IsElevated() && installed {
 		if err := platform.ElevateSelf(os.Args[1:]); err != nil {
@@ -112,14 +119,14 @@ func runUpdate(files fs.FS, installed bool, extractDir string, waitPID uint32, r
 	if installed {
 		o := setup.UpdateOptions()
 		if o.Dir == "" {
-			fail(errors.New("não achei a instalação do vpn_specify para atualizar"), false)
+			fail(i18n.Error("could not find the vpn_specify installation to update"), false)
 		}
 		dir, err = setup.Install(files, o, quiet)
 	} else {
 		err = setup.Extract(files, extractDir, quiet)
 	}
 	if err != nil {
-		fail(fmt.Errorf("a atualização não foi instalada: %w", err), false)
+		fail(i18n.Wrap(err, "the update was not installed"), false)
 	}
 	if run {
 		_ = exec.Command(filepath.Join(dir, setup.MainExe)).Start()
@@ -128,8 +135,8 @@ func runUpdate(files fs.FS, installed bool, extractDir string, waitPID uint32, r
 
 func fail(err error, silent bool) {
 	if !silent {
-		platform.MessageBox("Instalar vpn_specify", "Erro: "+err.Error(), 0x10)
+		platform.MessageBox(i18n.T("Install vpn_specify"), i18n.T("Error: {0}", err), 0x10)
 	}
-	fmt.Fprintln(os.Stderr, "erro:", err)
+	fmt.Fprintln(os.Stderr, "error:", err)
 	os.Exit(1)
 }

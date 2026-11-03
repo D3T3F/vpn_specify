@@ -4,15 +4,16 @@ package gui
 
 import (
 	_ "embed"
-	"errors"
-	"fmt"
 	"log"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
 	vpnspecify "vpn_specify"
+	"vpn_specify/internal/engine"
+	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/version"
 
 	webview2 "github.com/jchv/go-webview2"
@@ -23,7 +24,7 @@ import (
 	"vpn_specify/internal/store"
 )
 
-// ---------- janela ----------
+// ---------- window ----------
 
 var processStartRe = regexp.MustCompile(`(?i)--processStart\s+"?([^"\s]+)"?`)
 
@@ -33,12 +34,11 @@ func (a *agent) runWindow(autoClose bool) {
 		DataPath:  filepath.Join(a.store.Dir, "webview2"),
 		WindowOptions: webview2.WindowOptions{
 			Title: "vpn_specify", Width: 1000, Height: 760, Center: true,
-			IconId: 1, // ícone embutido (assets\vpn_specify.rc)
+			IconId: 1, // embedded icon (assets\resource.rc.tmpl)
 		},
 	})
 	if w == nil {
-		platform.MessageBox("vpn_specify", "Não consegui abrir a janela: o Microsoft Edge WebView2 Runtime não está instalado.\n"+
-			"Baixe em https://developer.microsoft.com/microsoft-edge/webview2/", 0x10)
+		platform.MessageBox("vpn_specify", i18n.T("Could not open the window: the Microsoft Edge WebView2 Runtime is not installed.\nDownload it from {0}", "https://developer.microsoft.com/microsoft-edge/webview2/"), 0x10)
 		return
 	}
 	hwnd := uintptr(w.Window())
@@ -64,13 +64,20 @@ func (a *agent) runWindow(autoClose bool) {
 	for name, f := range a.upd.api() {
 		must(w.Bind(name, f))
 	}
+	// vsSetLanguage switches the interface language and saves the choice.
+	must(w.Bind("vsSetLanguage", func(code string) (i18n.PageState, error) {
+		if err := i18n.Save(code); err != nil {
+			return i18n.PageState{}, err
+		}
+		return i18n.State(), nil
+	}))
 	must(w.Bind("vsLog", func(since int) map[string]any {
 		lines, next := a.logs.since(since)
 		return map[string]any{"lines": lines, "next": next}
 	}))
 	must(w.Bind("vsImportConfig", func() (*store.VPNConfig, error) {
-		p, ok := platform.OpenFileDialog(hwnd, "Escolha o arquivo da VPN", filepath.Join(os.Getenv("USERPROFILE"), "Downloads"), false,
-			"Configuração de VPN (*.ovpn, *.conf)", "*.ovpn;*.conf", "Todos os arquivos", "*.*")
+		p, ok := platform.OpenFileDialog(hwnd, i18n.T("Choose the VPN file"), filepath.Join(os.Getenv("USERPROFILE"), "Downloads"), false,
+			i18n.T("VPN configuration (*.ovpn, *.conf)"), "*.ovpn;*.conf", i18n.T("All files"), "*.*")
 		if !ok {
 			return nil, nil
 		}
@@ -78,28 +85,28 @@ func (a *agent) runWindow(autoClose bool) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("configuração importada: %s (%s)", c.Name, c.Kind)
+		log.Printf("configuration imported: %s (%s)", c.Name, c.Kind)
 		return &c, nil
 	}))
 	must(w.Bind("vsRemoveConfig", func(name string) error {
 		if a.configInUse(name) {
-			return errors.New("desconecte esta VPN antes de removê-la")
+			return i18n.Error("disconnect this VPN before removing it")
 		}
 		return a.store.RemoveConfig(name)
 	}))
 	must(w.Bind("vsConfigText", func(name string) (string, error) { return a.store.ConfigText(name) }))
 	must(w.Bind("vsUpdateConfig", func(name, newName, text string) (*store.VPNConfig, error) {
 		if a.configInUse(name) {
-			return nil, errors.New("desconecte esta VPN antes de editá-la")
+			return nil, i18n.Error("disconnect this VPN before editing it")
 		}
 		c, err := a.store.UpdateConfig(name, newName, text)
 		if err != nil {
 			return nil, err
 		}
 		if c.Name != name {
-			log.Printf("VPN renomeada: %s -> %s", name, c.Name)
+			log.Printf("VPN renamed: %s -> %s", name, c.Name)
 		} else {
-			log.Printf("VPN %s alterada", name)
+			log.Printf("VPN %s changed", name)
 		}
 		return &c, nil
 	}))
@@ -121,8 +128,8 @@ func (a *agent) runWindow(autoClose bool) {
 		}()
 	}))
 	must(w.Bind("vsPickApp", func() (*pickedApp, error) {
-		p, ok := platform.OpenFileDialog(hwnd, "Escolha o programa ou atalho", platform.StartMenuDir(), true,
-			"Programas e atalhos (*.exe, *.lnk)", "*.exe;*.lnk", "Todos os arquivos", "*.*")
+		p, ok := platform.OpenFileDialog(hwnd, i18n.T("Choose the program or shortcut"), platform.StartMenuDir(), true,
+			i18n.T("Programs and shortcuts (*.exe, *.lnk)"), "*.exe;*.lnk", i18n.T("All files"), "*.*")
 		if !ok {
 			return nil, nil
 		}
@@ -134,7 +141,7 @@ func (a *agent) runWindow(autoClose bool) {
 			}
 			pa.Path, pa.Args, pa.WorkDir, pa.Icon = si.Target, si.Args, si.WorkDir, si.Icon
 		}
-		// Apps com atualizador (Discord, Slack, Teams antigo...): "Update.exe --processStart Discord.exe"
+		// Apps with an updater (Discord, Slack, old Teams...): "Update.exe --processStart Discord.exe"
 		exe := strings.ToLower(filepath.Base(pa.Path))
 		if m := processStartRe.FindStringSubmatch(pa.Args); m != nil {
 			exe = strings.ToLower(m[1])
@@ -166,12 +173,12 @@ func (a *agent) runWindow(autoClose bool) {
 	must(w.Bind("vsLaunchApp", func(id string) error {
 		app, ok := a.store.App(id)
 		if !ok {
-			return errors.New("app não encontrado")
+			return store.ErrAppNotFound
 		}
 		go func() {
 			if err := a.launchApp(app); err != nil {
-				log.Printf("erro ao abrir %s: %v", app.Name, err)
-				a.setNotice(fmt.Sprintf("Não consegui abrir %s: %v", app.Name, err))
+				log.Printf("error opening %s: %v", app.Name, err)
+				a.setNotice(i18n.T("Could not open {0}: {1}", app.Name, err))
 			}
 		}()
 		return nil
@@ -179,15 +186,15 @@ func (a *agent) runWindow(autoClose bool) {
 	must(w.Bind("vsCreateShortcut", func(id, name string, desktop bool) (string, error) {
 		app, ok := a.store.App(id)
 		if !ok {
-			return "", errors.New("app não encontrado")
+			return "", store.ErrAppNotFound
 		}
 		name = store.SafeName(name, "")
 		if name == "" {
-			return "", errors.New("nome do atalho vazio")
+			return "", i18n.Error("empty shortcut name")
 		}
 		exe, _ := os.Executable()
 		lnk := filepath.Join(platform.StartMenuDir(), name+".lnk")
-		desc := fmt.Sprintf("Abre %s pela VPN %s (vpn_specify)", app.Name, app.Config)
+		desc := i18n.T("Opens {0} through the VPN {1} (vpn_specify)", app.Name, app.Config)
 		if err := platform.CreateShortcut(lnk, exe, "launch "+app.ID, filepath.Dir(exe), app.Icon, desc); err != nil {
 			return "", err
 		}
@@ -200,13 +207,13 @@ func (a *agent) runWindow(autoClose bool) {
 			_ = os.Remove(app.Shortcut)
 		}
 		_ = a.store.SetShortcut(app.ID, lnk)
-		log.Printf("atalho criado: %s", lnk)
+		log.Printf("shortcut created: %s", lnk)
 		return lnk, nil
 	}))
 	must(w.Bind("vsCreateMainShortcut", func() (string, error) {
 		exe, _ := os.Executable()
 		lnk := filepath.Join(platform.StartMenuDir(), "vpn_specify.lnk")
-		return lnk, platform.CreateShortcut(lnk, exe, "", filepath.Dir(exe), exe+",0", "vpn_specify: VPN só para os apps escolhidos")
+		return lnk, platform.CreateShortcut(lnk, exe, "", filepath.Dir(exe), exe+",0", i18n.T("vpn_specify: VPN only for the apps you choose"))
 	}))
 	must(w.Bind("vsSetAutoDisconnect", func(v bool) error { return a.store.SetAutoDisconnect(v) }))
 	must(w.Bind("vsAbout", func() map[string]string {
@@ -238,8 +245,8 @@ func (a *agent) runWindow(autoClose bool) {
 	a.mu.Unlock()
 }
 
-// configInUse: a VPN está conectada (ou conectando) agora.
+// configInUse: the VPN is connected (or connecting) right now.
 func (a *agent) configInUse(name string) bool {
 	s := a.eng.Status()
-	return s.Config == name && (s.State == "conectado" || s.State == "conectando")
+	return s.Config == name && (s.State == engine.StateConnected || s.State == engine.StateConnecting)
 }

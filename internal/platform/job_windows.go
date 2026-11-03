@@ -13,8 +13,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// NewStopEvent cria um evento nomeado para o "--service <evento> 0" do
-// OpenVPN: quando sinalizado, o openvpn encerra de forma limpa.
+// NewStopEvent creates a named event for OpenVPN's "--service <event> 0":
+// when signaled, openvpn exits cleanly.
 func NewStopEvent() (string, func(), error) {
 	name := fmt.Sprintf("vpn_specify_stop_%d_%d", os.Getpid(), rand.Uint32())
 	p, _ := windows.UTF16PtrFromString(name)
@@ -25,14 +25,14 @@ func NewStopEvent() (string, func(), error) {
 	return name, func() { _ = windows.SetEvent(h) }, nil
 }
 
-// HideConsole impede que o processo filho abra uma janela de console.
+// HideConsole keeps the child process from opening a console window.
 func HideConsole(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
-// BindChildToUs coloca o processo filho num Job Object com
-// KILL_ON_JOB_CLOSE: se o vpn_specify morrer (fechar a janela, Gerenciador
-// de Tarefas), o Windows encerra o openvpn junto, sem deixar a VPN órfã.
+// BindChildToUs puts the child process in a Job Object with
+// KILL_ON_JOB_CLOSE: if vpn_specify dies (window closed, Task Manager),
+// Windows ends openvpn too, so the VPN is never left orphaned.
 func BindChildToUs(p *os.Process) error {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
@@ -55,6 +55,6 @@ func BindChildToUs(p *os.Process) error {
 		windows.CloseHandle(job)
 		return err
 	}
-	// O handle do job fica aberto de propósito até o fim do processo.
+	// The job handle stays open on purpose until the process ends.
 	return nil
 }

@@ -18,10 +18,10 @@ import (
 	"vpn_specify/internal/paths"
 )
 
-// Canal de controle da instância em execução (a que tem a VPN e roda como
-// Administrador). Atalhos e novas janelas, que rodam sem elevação, só pedem
-// "mostre a janela" ou "abra o app X". Assim o UAC aparece só quando a VPN
-// ainda não está ligada.
+// Control channel of the running instance (the one holding the VPN, running
+// as Administrator on Windows). Shortcuts and new windows, which run
+// unelevated, only ask "show the window" or "open app X". So UAC only
+// appears when the VPN is not on yet.
 
 const controlAddr = "127.0.0.1:10799"
 
@@ -31,7 +31,7 @@ type controlInfo struct {
 
 func controlFile() string { return filepath.Join(paths.DataDir(), "control.json") }
 
-// Start abre a porta de controle; falha se já existe outra instância.
+// Start opens the control port; it fails if another instance exists.
 func Start(handlers map[string]func(q url.Values) error) (func(), error) {
 	ln, err := net.Listen("tcp", controlAddr)
 	if err != nil {
@@ -62,9 +62,9 @@ func Start(handlers map[string]func(q url.Values) error) (func(), error) {
 	return func() { srv.Close(); os.Remove(controlFile()) }, nil
 }
 
-// Call envia um comando para a instância em execução.
-// Devolve errNoInstance se não houver nenhuma.
-var ErrNoInstance = errors.New("nenhuma instância em execução")
+// Call sends a command to the running instance.
+// It returns ErrNoInstance if there is none.
+var ErrNoInstance = errors.New("no running instance")
 
 func Call(path string, q url.Values) error {
 	b, err := os.ReadFile(controlFile())

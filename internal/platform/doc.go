@@ -1,4 +1,5 @@
-// Package platform reúne as chamadas específicas do Windows: elevação (UAC),
-// abrir apps sem privilégios, Job Object, DPAPI, diálogos, ícones da janela,
-// atalhos .lnk e lista de processos. Em outros sistemas há só o mínimo.
+// Package platform gathers the operating-system specific calls: on Windows,
+// elevation (UAC), starting apps unelevated, Job Objects, DPAPI, dialogs,
+// window icons, .lnk shortcuts and the process list; on Linux, sudo helpers,
+// parent-death signals and the password key file.
 package platform

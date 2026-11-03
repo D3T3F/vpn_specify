@@ -1,10 +1,10 @@
 #!/bin/sh
-# Compila o vpn_specify para Linux (interface gráfica e terminal: up, run, status).
+# Builds vpn_specify for Linux (graphical interface and terminal).
 #
-#   ./scripts/build.sh          gera ./vpn_specify na raiz do projeto
-#   ./scripts/build.sh -test    roda go vet e os testes antes
+#   ./scripts/build.sh          builds ./vpn_specify in the project root
+#   ./scripts/build.sh -test    runs go vet and the tests first
 #
-# Os testes que criam interface tun só rodam como root:
+# The tests that create a tun interface only run as root:
 #   sudo -E go test ./internal/tunnel
 set -eu
 cd "$(dirname "$0")/.."
