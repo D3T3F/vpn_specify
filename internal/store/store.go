@@ -47,10 +47,14 @@ type AppEntry struct {
 	Mode     string   `json:"mode"`    // capture | proxy
 	Capture  []string `json:"capture"` // executáveis capturados
 	Shortcut string   `json:"shortcut"`
+	// Autostart: abrir na VPN ao entrar na conta (veja internal/autostart)
+	Autostart bool `json:"autostart"`
 }
 
 type Settings struct {
 	AutoDisconnect bool        `json:"autoDisconnect"` // desconecta quando os apps fecham (sem janela aberta)
+	NoUpdateCheck  bool        `json:"noUpdateCheck"`  // não procurar atualizações ao abrir
+	SkipVersion    string      `json:"skipVersion"`    // versão que o usuário mandou ignorar
 	Configs        []VPNConfig `json:"configs"`
 	Apps           []AppEntry  `json:"apps"`
 }
@@ -107,6 +111,22 @@ func (st *Store) SetAutoDisconnect(v bool) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.s.AutoDisconnect = v
+	return st.saveLocked()
+}
+
+// SetUpdateCheck liga/desliga a busca de atualizações ao abrir.
+func (st *Store) SetUpdateCheck(v bool) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.s.NoUpdateCheck = !v
+	return st.saveLocked()
+}
+
+// SetSkipVersion guarda uma versão que não deve mais ser oferecida.
+func (st *Store) SetSkipVersion(v string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.s.SkipVersion = v
 	return st.saveLocked()
 }
 
@@ -342,6 +362,14 @@ func (st *Store) SaveApp(a AppEntry) (AppEntry, error) {
 	if st.configLocked(a.Config) == nil {
 		return a, errors.New("escolha uma VPN para o app")
 	}
+	if a.Autostart {
+		// só uma VPN fica ativa por vez
+		for _, o := range st.s.Apps {
+			if o.ID != a.ID && o.Autostart && o.Config != a.Config {
+				return a, fmt.Errorf("só uma VPN fica ativa por vez: os apps que abrem com o sistema precisam usar a mesma VPN (%s abre com a VPN %q)", o.Name, o.Config)
+			}
+		}
+	}
 	if a.ID == "" {
 		a.ID = newID()
 		st.s.Apps = append(st.s.Apps, a)
@@ -394,6 +422,19 @@ func (st *Store) RemoveApp(id string) (AppEntry, error) {
 		}
 	}
 	return AppEntry{}, errors.New("app não encontrado")
+}
+
+// AutostartApps devolve os apps marcados para abrir com o sistema.
+func (st *Store) AutostartApps() []AppEntry {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	var out []AppEntry
+	for _, a := range st.s.Apps {
+		if a.Autostart {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func normalizeList(in []string) []string {

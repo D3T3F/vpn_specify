@@ -18,6 +18,7 @@ import (
 	"vpn_specify/internal/launcher"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/store"
+	"vpn_specify/internal/update"
 )
 
 // O agente no Linux faz o mesmo que no Windows (agent_windows.go): mantém a
@@ -40,15 +41,23 @@ type agent struct {
 	lastLaunch time.Time
 	notice     string
 	showCh     chan bool // pedido de janela (autoClose)
+
+	upd    *updater
+	quitCh chan struct{} // atualização pronta: fechar o agente
+	plan   *update.Plan  // aplicada depois de desconectar (veja runAgent)
 }
 
-func runAgent(show bool, launchID string) error {
+func runAgent(show bool, launchID string, autostartNow bool) error {
 	st, err := store.Open()
 	if err != nil {
 		platform.MessageBox("vpn_specify", err.Error(), 0x10)
 		return err
 	}
-	a := &agent{store: st, eng: engine.New(), logs: &logRing{}, watch: map[string]bool{}, pgids: map[int]bool{}, showCh: make(chan bool, 4)}
+	a := &agent{store: st, eng: engine.New(), logs: &logRing{}, watch: map[string]bool{}, pgids: map[int]bool{}, showCh: make(chan bool, 4), quitCh: make(chan struct{}, 1)}
+	// registrado primeiro, roda por último: depois de desconectar e liberar
+	// as portas (no Linux, o Run troca este processo pela versão nova)
+	defer a.runPlan()
+	a.upd = newUpdater(st, a.quitForUpdate, openWithDefault)
 	if lf, err := os.OpenFile(filepath.Join(st.Dir, "vpn_specify.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
 		defer lf.Close()
 		log.SetOutput(io.MultiWriter(lf, a.logs))
@@ -57,11 +66,15 @@ func runAgent(show bool, launchID string) error {
 	}
 
 	stopControl, err := control.Start(map[string]func(url.Values) error{
-		"show":   func(url.Values) error { a.requestShow(false); return nil },
-		"launch": func(q url.Values) error { go a.launchFromShortcut(q.Get("id")); return nil },
+		"show":      func(url.Values) error { a.requestShow(false); return nil },
+		"launch":    func(q url.Values) error { go a.launchFromShortcut(q.Get("id")); return nil },
+		"autostart": func(url.Values) error { go a.autostart(); return nil },
 	})
 	if err != nil {
 		// corrida: outra instância acabou de abrir
+		if autostartNow {
+			return control.Call("autostart", nil)
+		}
 		if launchID != "" {
 			return control.Call("launch", url.Values{"id": {launchID}})
 		}
@@ -81,6 +94,15 @@ func runAgent(show bool, launchID string) error {
 	if launchID != "" {
 		go a.launchFromShortcut(launchID)
 	}
+	go a.upd.autoCheck()
+	go func() { // a entrada do sistema acompanha o executável atual
+		if err := syncAutostart(st); err != nil {
+			log.Printf("inicialização com o sistema: %v", err)
+		}
+	}()
+	if autostartNow {
+		go a.autostart()
+	}
 
 	tick := time.NewTicker(3 * time.Second)
 	defer tick.Stop()
@@ -97,12 +119,55 @@ func runAgent(show bool, launchID string) error {
 			} else {
 				fmt.Fprintf(os.Stderr, "vpn_specify: janela em %s\n", a.ui.pageURL())
 			}
+		case <-a.quitCh:
+			return nil
 		case <-tick.C:
 			if a.shouldExit() {
 				return nil
 			}
 		}
 	}
+}
+
+// quitForUpdate fecha a janela e o agente; runAgent desconecta e então
+// aplica a atualização.
+func (a *agent) quitForUpdate(plan *update.Plan) {
+	a.mu.Lock()
+	a.plan = plan
+	a.mu.Unlock()
+	a.ui.broadcast("close")
+	time.Sleep(300 * time.Millisecond) // o evento chega antes de o servidor sumir
+	select {
+	case a.quitCh <- struct{}{}:
+	default:
+	}
+}
+
+func (a *agent) runPlan() {
+	a.mu.Lock()
+	plan := a.plan
+	a.mu.Unlock()
+	if plan == nil {
+		return
+	}
+	if err := plan.Run(); err != nil {
+		log.Printf("não consegui reabrir depois de atualizar: %v", err)
+		platform.MessageBox("vpn_specify", "A atualização foi instalada, mas não consegui reabrir o vpn_specify: "+err.Error(), 0x10)
+	}
+}
+
+// autostart: "vpn_specify autostart" (XDG autostart, ao entrar na sessão)
+// abre os apps marcados para iniciar com o sistema, sem mostrar a janela.
+func (a *agent) autostart() {
+	a.mu.Lock()
+	a.lastLaunch = time.Now()
+	a.mu.Unlock()
+	runAutostart(a.store, a.launchApp, func(msg string) {
+		a.setNotice(msg)
+		if !a.ui.isOpen() {
+			platform.MessageBox("vpn_specify", msg, 0x10)
+		}
+	})
 }
 
 func (a *agent) requestShow(autoClose bool) {

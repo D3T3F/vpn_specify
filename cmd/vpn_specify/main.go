@@ -16,6 +16,7 @@ import (
 	"vpn_specify/internal/gui"
 	"vpn_specify/internal/setup"
 	"vpn_specify/internal/tunnel"
+	"vpn_specify/internal/version"
 )
 
 func usage() {
@@ -34,6 +35,16 @@ Uso:
 
   vpn_specify status [opções]
       Mostra seu IP público direto e pela VPN.
+
+  vpn_specify update [-check] [-y]
+      Procura uma versão nova nas releases do GitHub e oferece instalar.
+
+  vpn_specify version
+      Mostra a versão.
+
+  vpn_specify autostart
+      Abre na VPN os apps marcados para iniciar com o sistema (usado pela
+      inicialização do sistema; normalmente não é chamado à mão).
 
 Exemplos:
   vpn_specify up trabalho.ovpn
@@ -68,6 +79,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "autostart": // entrada de inicialização do sistema (veja internal/autostart)
+		if err := gui.AutostartMain(); err != nil && !isCancelled(err) {
+			fmt.Fprintln(os.Stderr, "erro:", err)
+			os.Exit(1)
+		}
+		return
 	case "agent":
 		err = gui.AgentMain(os.Args[2:])
 		if err != nil {
@@ -95,6 +112,11 @@ func main() {
 		err = cmdRun(os.Args[2:])
 	case "status":
 		err = cmdStatus(os.Args[2:])
+	case "update":
+		err = cmdUpdate(os.Args[2:])
+	case "version", "-version", "--version":
+		fmt.Println(version.Version)
+		return
 	case "help", "-h", "--help":
 		usage()
 		return

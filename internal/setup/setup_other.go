@@ -5,6 +5,7 @@ package setup
 import (
 	"errors"
 	"io/fs"
+	"time"
 )
 
 var errWindowsOnly = errors.New("o instalador só existe no Windows")
@@ -17,3 +18,7 @@ func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 }
 
 func InstalledDir() string { return "" }
+
+func UpdateOptions() Options                                         { return Options{} }
+func Extract(payload fs.FS, dir string, progress func(string)) error { return errWindowsOnly }
+func WaitProcessExit(pid uint32, timeout time.Duration)              {}

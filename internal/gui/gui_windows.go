@@ -19,7 +19,7 @@ func Main() error {
 	if !platform.IsElevated() {
 		return platform.ElevateSelf([]string{"agent"})
 	}
-	return runAgent(true, "")
+	return runAgent(true, "", false)
 }
 
 // LaunchMain: "vpn_specify.exe launch <id>" (usado pelos atalhos).
@@ -36,7 +36,19 @@ func LaunchMain(id string) error {
 	if !platform.IsElevated() {
 		return platform.ElevateSelf([]string{"agent", "-launch", id})
 	}
-	return runAgent(false, id)
+	return runAgent(false, id, false)
+}
+
+// AutostartMain: "vpn_specify.exe autostart", rodado pela tarefa agendada no
+// logon (já com privilégio máximo, sem UAC).
+func AutostartMain() error {
+	if err := control.Call("autostart", nil); err == nil {
+		return nil
+	}
+	if !platform.IsElevated() {
+		return platform.ElevateSelf([]string{"agent", "-autostart"})
+	}
+	return runAgent(false, "", true)
 }
 
 // AgentMain: instância elevada (aberta via UAC).
@@ -45,5 +57,8 @@ func AgentMain(args []string) error {
 	if len(args) == 2 && args[0] == "-launch" {
 		id = args[1]
 	}
-	return runAgent(id == "", id)
+	if len(args) == 1 && args[0] == "-autostart" {
+		return runAgent(false, "", true)
+	}
+	return runAgent(id == "", id, false)
 }

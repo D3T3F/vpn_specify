@@ -20,6 +20,14 @@ import (
 // api: as funções vs* que a página chama (as mesmas do Windows, em
 // window_windows.go), mais vsListApps e vsImportConfigData, só do Linux.
 func (a *agent) api() map[string]any {
+	m := a.baseAPI()
+	for k, f := range a.upd.api() {
+		m[k] = f
+	}
+	return m
+}
+
+func (a *agent) baseAPI() map[string]any {
 	return map[string]any{
 		"vsState": func() uiState {
 			a.mu.Lock()
@@ -30,7 +38,7 @@ func (a *agent) api() map[string]any {
 				watching = append(watching, k)
 			}
 			a.mu.Unlock()
-			return uiState{Status: a.eng.Status(), Settings: a.store.Snapshot(), Notice: n, DataDir: a.store.Dir, Watching: watching}
+			return uiState{Status: a.eng.Status(), Settings: a.store.Snapshot(), Notice: n, DataDir: a.store.Dir, Watching: watching, Update: a.upd.snapshot()}
 		},
 		"vsLog": func(since int) map[string]any {
 			lines, next := a.logs.since(since)
@@ -125,13 +133,20 @@ func (a *agent) api() map[string]any {
 			if app.Path != "" && !filepath.IsAbs(app.Path) {
 				return app, errors.New("informe o caminho completo do programa (ex.: /usr/bin/firefox)")
 			}
-			return a.store.SaveApp(app)
+			saved, err := a.store.SaveApp(app)
+			if err != nil {
+				return saved, err
+			}
+			return saved, syncAutostartAfterSave(a.store)
 		},
 		"vsRemoveApp": func(id string) error {
 			app, err := a.store.RemoveApp(id)
 			if err == nil && app.Shortcut != "" {
 				_ = os.Remove(app.Shortcut)
 				_ = os.Remove(filepath.Join(desktopDir(), filepath.Base(app.Shortcut)))
+			}
+			if err == nil && app.Autostart {
+				return syncAutostartAfterSave(a.store)
 			}
 			return err
 		},

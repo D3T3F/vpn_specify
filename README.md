@@ -69,6 +69,30 @@ Ao abrir um atalho:
 - Com "Desconectar quando os apps forem fechados" marcado e a janela fechada,
   a VPN desliga sozinha uns 30 s depois que os apps fecharem.
 
+### Apps que abrem com o sistema
+
+No diálogo do app (**Adicionar app…** ou **Editar**), marque **Abrir junto
+com o Windows**. Ao entrar na conta, o vpn_specify conecta a VPN e abre todos
+os apps marcados, sem mostrar a janela. Na lista, eles aparecem com o selo
+"inicia com o sistema".
+
+- **Sem UAC no logon**: o vpn_specify cria uma tarefa agendada,
+  `vpn_specify\Iniciar apps na VPN` (em Agendador de Tarefas), que roda
+  `vpn_specify.exe autostart` 15 s depois do logon, já com privilégio de
+  administrador. Os apps abrem como usuário comum, como nos atalhos.
+- No Linux a opção é **Abrir junto com o sistema**. A entrada fica em
+  `~/.config/autostart/vpn_specify.desktop` e roda 10 s depois de entrar na
+  sessão. VPNs OpenVPN pedem a senha de administrador nessa hora.
+- Há uma entrada só, criada quando o primeiro app é marcado e removida
+  quando nenhum estiver. Ela é atualizada sempre que o vpn_specify abre, e
+  segue o executável se ele mudar de pasta ou for atualizado.
+- Como só uma VPN fica ativa por vez, os apps marcados precisam usar a
+  **mesma VPN**. A tela avisa se não usarem.
+- Logo depois do logon a rede pode demorar. Cada app é tentado até 4 vezes,
+  com pausas. Senha recusada ou credenciais faltando não são repetidas. O
+  que não abrir aparece numa mensagem.
+- O desinstalador remove a tarefa.
+
 Só uma VPN fica ativa por vez. Evite capturar nomes genéricos como
 `cmd.exe`, porque todos os processos com esse nome entram na VPN.
 
@@ -270,6 +294,61 @@ Diferenças em relação ao Windows:
   `~/snap/<app>/common/vpn_specify/profiles/`.
 - **Apps que ignoram proxy**: sem `-capture`, use `-L` para endereços fixos.
 
+## Atualizações
+
+Ao abrir a interface, o vpn_specify consulta a última versão nas
+[releases do GitHub](https://github.com/D3T3F/vpn_specify/releases). Se
+houver uma mais nova, aparece um aviso no topo da janela:
+
+- **Atualizar**: baixa o pacote, confere o SHA-256, desconecta, fecha,
+  instala e abre de novo já na versão nova.
+- **Agora não**: esconde o aviso até a próxima vez que o app abrir.
+- **Ignorar esta versão**: não avisa mais dessa versão, só da seguinte.
+- **Novidades**: mostra o texto da release.
+
+Em **Preferências** dá para desligar a busca ao abrir e procurar na hora
+(**Procurar atualizações**). No terminal:
+
+```sh
+vpn_specify update           # mostra a versão nova e pergunta se quer instalar
+vpn_specify update -check    # só verifica
+vpn_specify update -y        # instala sem perguntar
+vpn_specify version
+```
+
+Como a versão nova é instalada:
+
+- **Windows, instalado**: o `vpn_specify-setup.exe` da release roda em modo
+  de atualização. Ele usa a mesma pasta, mantém os atalhos que existem e pede
+  o UAC se preciso.
+- **Windows, portátil**: o mesmo instalador só troca os arquivos da pasta,
+  sem registro nem atalhos.
+- **Linux**: o executável é trocado no lugar. Se a pasta exigir root (ex.:
+  `/usr/local/bin`), o sistema pede a senha (`pkexec`). Antes da troca, o
+  vpn_specify confere que o executável novo roda e informa a versão certa.
+
+Segurança: o download só é aceito de
+`github.com/D3T3F/vpn_specify/releases/download/` e se o SHA-256 bater com
+o que o GitHub informa para o arquivo (ou com um `SHA256SUMS` na release).
+Sem hash, nada é instalado. Isso protege contra download corrompido ou
+adulterado no caminho, mas não contra alguém com acesso à conta do GitHub.
+Para isso seria preciso assinar os pacotes. Builds sem versão (`dev`) nunca
+procuram atualizações.
+
+### Publicar uma versão
+
+1. Mude o `VERSION` (ex.: `1.1.0`) e rode `.\scripts\build.ps1 -Test -Icon -Dist -Linux`.
+2. Crie a release com a tag **`v1.1.0`** (não marque como pré-release) e
+   anexe os arquivos de `dist\` **com estes nomes**, que o atualizador procura:
+   - `vpn_specify-1.1.0-win64.zip`
+   - `vpn_specify-1.1.0-linux-amd64.tar.gz`
+   - `vpn_specify-1.1.0-linux-arm64.tar.gz`
+
+   Um sistema sem pacote na release simplesmente não recebe o aviso. Por
+   isso a `v1.0.0`, que só tem o pacote do Windows, não aparece para quem
+   usa Linux.
+3. O texto da release aparece em **Novidades**.
+
 ## Licença
 
 [MIT](LICENSE). O texto aparece no programa (Preferências > Ver licença), no
@@ -347,6 +426,8 @@ internal/
   control/              API local entre instâncias (atalhos sem novo UAC)
   launcher/             abre apps configurados para usar o proxy
   netcheck/             verificação do IP público (TCP e UDP)
+  update/               busca, download (com SHA-256) e instalação de versões novas do GitHub
+  autostart/            inicializar com o sistema: tarefa agendada (Windows) ou XDG autostart (Linux)
   gui/                  interface e agente: WebView2 (Windows) ou página local + janela de app (Linux); página em gui/web/
   platform/             APIs do sistema: UAC, DPAPI, atalhos, Job Object (Windows); sudo, Pdeathsig (Linux)
   setup/                instalar/desinstalar; tela em setup/web/

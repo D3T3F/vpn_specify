@@ -59,8 +59,11 @@ func (a *agent) runWindow(autoClose bool) {
 			watching = append(watching, k)
 		}
 		a.mu.Unlock()
-		return uiState{Status: a.eng.Status(), Settings: a.store.Snapshot(), Notice: n, DataDir: a.store.Dir, Watching: watching}
+		return uiState{Status: a.eng.Status(), Settings: a.store.Snapshot(), Notice: n, DataDir: a.store.Dir, Watching: watching, Update: a.upd.snapshot()}
 	}))
+	for name, f := range a.upd.api() {
+		must(w.Bind(name, f))
+	}
 	must(w.Bind("vsLog", func(since int) map[string]any {
 		lines, next := a.logs.since(since)
 		return map[string]any{"lines": lines, "next": next}
@@ -142,12 +145,21 @@ func (a *agent) runWindow(autoClose bool) {
 		}
 		return pa, nil
 	}))
-	must(w.Bind("vsSaveApp", func(app store.AppEntry) (store.AppEntry, error) { return a.store.SaveApp(app) }))
+	must(w.Bind("vsSaveApp", func(app store.AppEntry) (store.AppEntry, error) {
+		saved, err := a.store.SaveApp(app)
+		if err != nil {
+			return saved, err
+		}
+		return saved, syncAutostartAfterSave(a.store)
+	}))
 	must(w.Bind("vsRemoveApp", func(id string) error {
 		app, err := a.store.RemoveApp(id)
 		if err == nil && app.Shortcut != "" {
 			_ = os.Remove(app.Shortcut)
 			_ = os.Remove(filepath.Join(platform.DesktopDir(), filepath.Base(app.Shortcut)))
+		}
+		if err == nil && app.Autostart {
+			return syncAutostartAfterSave(a.store)
 		}
 		return err
 	}))

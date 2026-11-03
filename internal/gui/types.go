@@ -21,6 +21,7 @@ type uiState struct {
 	Notice   string         `json:"notice"`
 	DataDir  string         `json:"dataDir"`
 	Watching []string       `json:"watching"`
+	Update   *updateInfo    `json:"update"`
 }
 
 type pickedApp struct {

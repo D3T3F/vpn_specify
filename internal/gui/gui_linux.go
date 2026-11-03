@@ -20,7 +20,7 @@ func Main() error {
 	if !hasDisplay() {
 		return errNoDisplay
 	}
-	return runAgent(true, "")
+	return runAgent(true, "", false)
 }
 
 // LaunchMain: "vpn_specify launch <id>" (usado pelos atalhos .desktop).
@@ -33,7 +33,15 @@ func LaunchMain(id string) error {
 		platform.MessageBox("vpn_specify", err.Error(), 0x10)
 		return err
 	}
-	return runAgent(false, id)
+	return runAgent(false, id, false)
+}
+
+// AutostartMain: "vpn_specify autostart", rodado ao entrar na sessão.
+func AutostartMain() error {
+	if err := control.Call("autostart", nil); err == nil {
+		return nil
+	}
+	return runAgent(false, "", true)
 }
 
 // AgentMain: "vpn_specify agent [-launch <id>]" (no Linux é igual a Main).
@@ -42,5 +50,8 @@ func AgentMain(args []string) error {
 	if len(args) == 2 && args[0] == "-launch" {
 		id = args[1]
 	}
-	return runAgent(id == "", id)
+	if len(args) == 1 && args[0] == "-autostart" {
+		return runAgent(false, "", true)
+	}
+	return runAgent(id == "", id, false)
 }

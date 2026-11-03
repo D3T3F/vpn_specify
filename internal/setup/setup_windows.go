@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
 	"vpn_specify/internal/platform"
@@ -158,4 +160,42 @@ func InstalledDir() string {
 	defer k.Close()
 	v, _, _ := k.GetStringValue("InstallLocation")
 	return v
+}
+
+// UpdateOptions: as opções da instalação atual, para atualizar sem mudar
+// nada (mesma pasta; só recria os atalhos que ainda existem).
+func UpdateOptions() Options {
+	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
+	return Options{
+		Dir:       InstalledDir(),
+		Desktop:   exists(filepath.Join(platform.DesktopDir(), shortcutName)),
+		StartMenu: exists(filepath.Join(platform.StartMenuDir(), shortcutName)),
+	}
+}
+
+// Extract só copia os arquivos para dir (atualização de cópia portátil:
+// sem registro nem atalhos).
+func Extract(payload fs.FS, dir string, progress func(string)) error {
+	if len(RunningInstances(dir)) > 0 {
+		return errRunning
+	}
+	return fs.WalkDir(payload, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		progress("Copiando " + p + "…")
+		_, err = copyFile(payload, p, filepath.Join(dir, filepath.FromSlash(p)))
+		return err
+	})
+}
+
+// WaitProcessExit espera o processo pid terminar (usado na atualização:
+// o vpn_specify abre o instalador e fecha em seguida).
+func WaitProcessExit(pid uint32, timeout time.Duration) {
+	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, pid)
+	if err != nil {
+		return // já terminou
+	}
+	defer windows.CloseHandle(h)
+	_, _ = windows.WaitForSingleObject(h, uint32(timeout/time.Millisecond))
 }

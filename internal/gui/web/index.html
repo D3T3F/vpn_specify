@@ -83,6 +83,14 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
 #pickList { max-height: 52vh; overflow: auto; }
 input[type=search] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; width: 100%; }
 body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu de aplicativos."; position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; background: rgba(0,0,0,.65); color: #fff; font-size: 16px; z-index: 100; }
+.card.update { border-color: var(--accent); }
+.card.update .row { flex-wrap: wrap; }
+.card.update .grow { flex: 1; min-width: 220px; }
+.card.update .title { font-weight: 650; }
+.card.update .sub { color: var(--muted); font-size: 13px; margin-top: 2px; overflow-wrap: anywhere; }
+.card.update .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.bar { height: 6px; background: var(--chip); border-radius: 99px; margin-top: 10px; overflow: hidden; }
+.bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 </style>
 </head>
 <body>
@@ -95,6 +103,22 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
 </header>
 
 <main>
+  <section class="card wide update" id="updBox" hidden>
+    <div class="row">
+      <div class="grow">
+        <div class="title" id="updTitle"></div>
+        <div class="sub" id="updSub"></div>
+        <div class="bar" id="updBar" hidden><span id="updFill"></span></div>
+      </div>
+      <div class="actions" id="updActions">
+        <button class="small" onclick="showNotes()">Novidades</button>
+        <button class="small" onclick="call(vsUpdateDismiss(true))">Ignorar esta versão</button>
+        <button class="small" onclick="call(vsUpdateDismiss(false))">Agora não</button>
+        <button class="small primary" onclick="installUpdate()">Atualizar</button>
+      </div>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Conexão</h2>
     <div class="row">
@@ -126,8 +150,11 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
     <div style="display:grid;gap:10px">
       <label class="check"><input type="checkbox" id="autoDisc" onchange="vsSetAutoDisconnect(this.checked)">
         Desconectar a VPN quando os apps abertos por ela forem fechados (com esta janela fechada)</label>
+      <label class="check"><input type="checkbox" id="updCheck" onchange="vsSetUpdateCheck(this.checked)">
+        Procurar atualizações ao abrir o vpn_specify</label>
       <div class="row"><button class="small" id="mainScBtn" onclick="mainShortcut()">Adicionar “vpn_specify” ao Menu Iniciar</button></div>
       <div class="row about"><span id="aboutText">vpn_specify</span><span class="spacer"></span>
+        <button class="small" onclick="checkUpdates()">Procurar atualizações</button>
         <button class="small" onclick="showLicense()">Ver licença</button></div>
     </div>
   </section>
@@ -156,6 +183,10 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
         <span><b>Proxy</b><small id="proxyDesc">Só TCP, para navegadores e apps Chromium/Electron. Não precisa de driver.</small></span></label>
     </div>
     <label class="field" id="aCaptureField">Processos capturados (separados por vírgula)<input type="text" id="aCapture" placeholder="discord.exe"></label>
+    <div>
+      <label class="check"><input type="checkbox" id="aAutostart"> <span id="aAutostartText">Abrir junto com o Windows (ao entrar na sua conta)</span></label>
+      <p class="hint" id="aAutostartHint" style="margin:4px 0 0 26px">O vpn_specify conecta a VPN e abre o app logo depois do logon, sem pedir o UAC. Os apps marcados precisam usar a mesma VPN.</p>
+    </div>
     <div class="buttons">
       <button type="button" onclick="appDlg.close()">Cancelar</button>
       <button type="button" class="primary" onclick="saveApp()">Salvar</button>
@@ -217,6 +248,18 @@ body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu
   </form>
 </dialog>
 
+<dialog id="notesDlg" class="wide">
+  <form method="dialog" onsubmit="return false">
+    <h3 id="notesTitle">Novidades</h3>
+    <pre id="notesText" class="license"></pre>
+    <div class="buttons">
+      <button type="button" onclick="call(vsOpenReleasePage())">Ver no GitHub</button>
+      <span class="spacer"></span>
+      <button type="button" class="primary" onclick="notesDlg.close()">Fechar</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="licDlg" class="wide">
   <form method="dialog" onsubmit="return false">
     <h3>Licença</h3>
@@ -271,6 +314,8 @@ async function refresh() {
   if (st.state === "erro") info += `<dt>Erro</dt><dd class="err">${esc(st.error)}</dd>`;
   $("connInfo").innerHTML = info;
   $("autoDisc").checked = s.autoDisconnect;
+  $("updCheck").checked = !s.noUpdateCheck;
+  renderUpdate(state.update);
 
   const cfgKey = JSON.stringify(s.configs);
   if (cfgKey !== lastConfigs) {
@@ -298,7 +343,7 @@ async function refresh() {
     $("apps").innerHTML = s.apps.length ? s.apps.map(a => `
       <div class="item">
         <div class="avatar">${esc((a.name[0] || "?").toUpperCase())}</div>
-        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !LINUX ? "captura completa" : "proxy"}</span><span class="badge">${esc(a.config)}</span></div>
+        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !LINUX ? "captura completa" : "proxy"}</span><span class="badge">${esc(a.config)}</span>${a.autostart ? `<span class="badge">inicia com o sistema</span>` : ""}</div>
           <div class="sub">${esc(a.path)} ${esc(a.args)}</div>
           ${a.shortcut ? `<div class="sub">Atalho: ${esc(shortcutName(a.shortcut))}</div>` : ""}</div>
         <div class="actions">
@@ -309,6 +354,50 @@ async function refresh() {
         </div>
       </div>`).join("") : `<div class="item empty">Nenhum app. Clique em “Adicionar app…” e escolha, por exemplo, o atalho do Discord.</div>`;
   }
+}
+
+// ---------- atualizações ----------
+function renderUpdate(u) {
+  const box = $("updBox");
+  const busy = !!u && (u.state === "downloading" || u.state === "installing");
+  const show = !!u && (busy || ((u.state === "available" || (u.state === "error" && u.version)) && !u.dismissed));
+  box.hidden = !show;
+  if (!show) return;
+  $("updActions").style.display = busy ? "none" : "";
+  $("updBar").hidden = !busy;
+  $("updSub").classList.toggle("err", u.state === "error");
+  if (u.state === "downloading") {
+    $("updTitle").textContent = `Baixando o vpn_specify ${u.version}…`;
+    $("updSub").textContent = `${Math.round(u.progress * 100)}%`;
+    $("updFill").style.width = (u.progress * 100) + "%";
+  } else if (u.state === "installing") {
+    $("updTitle").textContent = `Instalando o vpn_specify ${u.version}…`;
+    $("updSub").textContent = "O vpn_specify vai fechar e abrir de novo já na versão nova.";
+    $("updFill").style.width = "100%";
+  } else if (u.state === "error") {
+    $("updTitle").textContent = `Não consegui atualizar para a versão ${u.version}`;
+    $("updSub").textContent = u.error;
+  } else {
+    $("updTitle").textContent = `Nova versão disponível: ${u.version}`;
+    $("updSub").textContent = `Você está usando a versão ${u.current}.`;
+  }
+}
+function installUpdate() {
+  const u = state.update, st = state.status;
+  const active = st.state === "conectado" || st.state === "conectando";
+  if (!confirm(`Atualizar para a versão ${u.version}?\n\nO vpn_specify vai baixar a atualização, fechar` +
+      (active ? " (desconectando a VPN e os apps abertos por ela)" : "") + ", instalar e abrir de novo.")) return;
+  call(vsUpdateInstall());
+}
+async function checkUpdates() {
+  const v = await call(vsUpdateCheck());
+  if (!v) toast(`Você já está na versão mais recente${about ? " (" + about.version + ")" : ""}.`, "ok");
+}
+function showNotes() {
+  const u = state.update;
+  $("notesTitle").textContent = `Novidades da versão ${u.version}`;
+  $("notesText").textContent = (u.notes || "").trim() || "(a versão não tem descrição)";
+  notesDlg.showModal();
 }
 
 async function refreshLog() {
@@ -416,6 +505,7 @@ function openAppDlg(a) {
   $("appDlgTitle").textContent = a.id ? "Editar app" : "Adicionar app";
   $("aName").value = a.name || ""; $("aPath").value = a.path || ""; $("aArgs").value = a.args || "";
   $("aCapture").value = (a.capture || []).join(", ");
+  $("aAutostart").checked = !!a.autostart;
   fillConfigSelect($("aConfig"), a.config || $("connSelect").value);
   document.querySelector(`input[name=aMode][value=${a.mode === "proxy" || LINUX ? "proxy" : "capture"}]`).checked = true;
   modeChanged();
@@ -438,7 +528,8 @@ function editApp(id) { openAppDlg({ ...state.settings.apps.find(a => a.id === id
 async function saveApp() {
   const a = { ...editing, name: $("aName").value, path: $("aPath").value, args: $("aArgs").value,
     config: $("aConfig").value, mode: document.querySelector("input[name=aMode]:checked").value,
-    capture: $("aCapture").value.split(",").map(s => s.trim()).filter(Boolean) };
+    capture: $("aCapture").value.split(",").map(s => s.trim()).filter(Boolean),
+    autostart: $("aAutostart").checked };
   const isNew = !a.id;
   const saved = await call(vsSaveApp(a), "App salvo.");
   appDlg.close();
@@ -516,6 +607,8 @@ if (LINUX) {
   $("scNameLabel").textContent = "Nome do atalho (aparece no menu de aplicativos)";
   $("scHint").textContent = "Ao abrir o atalho, o vpn_specify conecta a VPN e abre o app dentro dela. VPNs OpenVPN pedem a senha de administrador ao conectar.";
   $("credHint").textContent = "A senha é guardada criptografada; a chave fica em ~/.local/share/vpn_specify, legível só pela sua conta.";
+  $("aAutostartText").textContent = "Abrir junto com o sistema (ao entrar na sessão)";
+  $("aAutostartHint").textContent = "O vpn_specify conecta a VPN e abre o app logo depois de entrar na sessão (VPNs OpenVPN pedem a senha de administrador nessa hora). Os apps marcados precisam usar a mesma VPN.";
   $("aPath").readOnly = false;
   $("aPath").placeholder = "/usr/bin/programa";
 }

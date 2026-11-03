@@ -24,6 +24,7 @@ import (
 	"vpn_specify/internal/launcher"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/store"
+	"vpn_specify/internal/update"
 )
 
 // ---------- agente ----------
@@ -42,9 +43,13 @@ type agent struct {
 	lastLaunch time.Time
 	notice     string // mensagem para a tela (erros de abrir app etc.)
 	showCh     chan showReq
+
+	upd    *updater
+	quitCh chan struct{} // atualização pronta: fechar o agente
+	plan   *update.Plan  // aplicada depois de desconectar (veja runAgent)
 }
 
-func runAgent(show bool, launchID string) error {
+func runAgent(show bool, launchID string, autostartNow bool) error {
 	runtime.LockOSThread() // a janela WebView2 precisa ficar sempre na mesma thread
 
 	st, err := store.Open()
@@ -52,7 +57,13 @@ func runAgent(show bool, launchID string) error {
 		platform.MessageBox("vpn_specify", err.Error(), 0x10)
 		return err
 	}
-	a := &agent{store: st, eng: engine.New(), logs: &logRing{}, watch: map[string]bool{}, showCh: make(chan showReq, 4)}
+	a := &agent{store: st, eng: engine.New(), logs: &logRing{}, watch: map[string]bool{}, showCh: make(chan showReq, 4), quitCh: make(chan struct{}, 1)}
+	// registrado primeiro, roda por último: depois de desconectar e liberar as portas
+	defer a.runPlan()
+	a.upd = newUpdater(st, a.quitForUpdate, func(u string) error {
+		_, err := platform.StartUnelevated(filepath.Join(os.Getenv("WINDIR"), "explorer.exe"), windows.EscapeArg(u), "", nil)
+		return err
+	})
 	if lf, err := os.OpenFile(filepath.Join(st.Dir, "vpn_specify.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
 		defer lf.Close()
 		log.SetOutput(io.MultiWriter(lf, a.logs))
@@ -61,11 +72,15 @@ func runAgent(show bool, launchID string) error {
 	}
 
 	stopControl, err := control.Start(map[string]func(url.Values) error{
-		"show":   func(url.Values) error { a.requestShow(false); return nil },
-		"launch": func(q url.Values) error { go a.launchFromShortcut(q.Get("id")); return nil },
+		"show":      func(url.Values) error { a.requestShow(false); return nil },
+		"launch":    func(q url.Values) error { go a.launchFromShortcut(q.Get("id")); return nil },
+		"autostart": func(url.Values) error { go a.autostart(); return nil },
 	})
 	if err != nil {
 		// corrida: outra instância acabou de abrir
+		if autostartNow {
+			return control.Call("autostart", nil)
+		}
 		if launchID != "" {
 			return control.Call("launch", url.Values{"id": {launchID}})
 		}
@@ -81,6 +96,15 @@ func runAgent(show bool, launchID string) error {
 	if launchID != "" {
 		go a.launchFromShortcut(launchID)
 	}
+	go a.upd.autoCheck()
+	go func() { // a entrada do sistema acompanha o executável atual
+		if err := syncAutostart(st); err != nil {
+			log.Printf("inicialização com o sistema: %v", err)
+		}
+	}()
+	if autostartNow {
+		go a.autostart()
+	}
 
 	tick := time.NewTicker(3 * time.Second)
 	defer tick.Stop()
@@ -88,12 +112,60 @@ func runAgent(show bool, launchID string) error {
 		select {
 		case r := <-a.showCh:
 			a.runWindow(r.autoClose)
+		case <-a.quitCh:
+			return nil
 		case <-tick.C:
 			if a.shouldExit() {
 				return nil
 			}
 		}
 	}
+}
+
+// quitForUpdate fecha a janela e o agente; runAgent desconecta e então
+// aplica a atualização (o instalador espera este processo terminar).
+func (a *agent) quitForUpdate(plan *update.Plan) {
+	a.mu.Lock()
+	a.plan = plan
+	w := a.w
+	a.mu.Unlock()
+	if w != nil {
+		w.Dispatch(func() { w.Destroy() })
+	}
+	select {
+	case a.quitCh <- struct{}{}:
+	default:
+	}
+}
+
+func (a *agent) runPlan() {
+	a.mu.Lock()
+	plan := a.plan
+	a.mu.Unlock()
+	if plan == nil {
+		return
+	}
+	if err := plan.Run(); err != nil {
+		log.Printf("não consegui iniciar a atualização: %v", err)
+		platform.MessageBox("vpn_specify", "Não consegui iniciar a atualização: "+err.Error(), 0x10)
+	}
+}
+
+// autostart: "vpn_specify autostart" (tarefa agendada no logon) abre os
+// apps marcados para iniciar com o sistema, sem mostrar a janela.
+func (a *agent) autostart() {
+	a.mu.Lock()
+	a.lastLaunch = time.Now()
+	a.mu.Unlock()
+	runAutostart(a.store, a.launchApp, func(msg string) {
+		a.setNotice(msg)
+		a.mu.Lock()
+		hasWindow := a.w != nil
+		a.mu.Unlock()
+		if !hasWindow {
+			platform.MessageBox("vpn_specify", msg, 0x10)
+		}
+	})
 }
 
 func (a *agent) requestShow(autoClose bool) {

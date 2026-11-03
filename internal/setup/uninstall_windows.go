@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
+	"vpn_specify/internal/autostart"
 	"vpn_specify/internal/paths"
 	"vpn_specify/internal/platform"
 )
@@ -80,6 +81,10 @@ func Uninstall(args []string) error {
 		if err := os.Remove(lnk); err != nil && !errors.Is(err, os.ErrNotExist) {
 			problems = append(problems, lnk)
 		}
+	}
+	// tarefa agendada dos apps que abrem com o sistema
+	if err := autostart.Disable(); err != nil {
+		problems = append(problems, "tarefa "+autostart.TaskName)
 	}
 	if err := registry.DeleteKey(registry.LOCAL_MACHINE, uninstallKey); err != nil && !errors.Is(err, registry.ErrNotExist) {
 		problems = append(problems, "registro de desinstalação")

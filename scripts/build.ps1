@@ -183,7 +183,10 @@ try {
         # 4. zip
         $zip = Join-Path 'dist' "$name.zip"
         Remove-Item $zip -ErrorAction SilentlyContinue
-        Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
+        # bsdtar do Windows (-a: formato pelo .zip); o Compress-Archive do
+        # PowerShell 5.1 grava os caminhos com "\", fora do padrão do zip
+        $bsdtar = Join-Path $env:SystemRoot 'System32\tar.exe'
+        Invoke-Native $bsdtar @('-a', '-c', '-f', $zip, '-C', 'dist', $name)
         Write-Host ''
         Get-ChildItem $stage -Recurse -File | Select-Object @{ n = 'Arquivo'; e = { $_.FullName.Substring((Resolve-Path $stage).Path.Length + 1) } }, Length | Format-Table -AutoSize
         Write-Host "Pacote: $((Resolve-Path $zip).Path) ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)" -ForegroundColor Green
