@@ -8,3 +8,4 @@ data/
 /dist/
 cmd/installer/payload/
 assets/_build.rc
+/vpn_specify

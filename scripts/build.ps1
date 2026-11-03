@@ -24,13 +24,19 @@
     LICENSE.txt            licença do vpn_specify (MIT)
     licencas\              licenças dos componentes de terceiros
 
+.PARAMETER Linux
+  Gera também a versão de terminal para Linux (amd64 e arm64):
+  dist\vpn_specify-<versão>-linux-<arq>.tar.gz, com o executável
+  vpn_specify, LICENSE e licencas\.
+
 .EXAMPLE
-  .\scripts\build.ps1 -Test -Dist
+  .\scripts\build.ps1 -Test -Dist -Linux
 #>
 param(
     [switch]$Test,
     [switch]$Icon,
-    [switch]$Dist
+    [switch]$Dist,
+    [switch]$Linux
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -80,6 +86,55 @@ try {
     Invoke-Native go @('build', '-trimpath', '-ldflags', "-s -w -H=windowsgui $ldVersion", '-o', 'vpn_specify.exe', './cmd/vpn_specify')
     Invoke-Native go @('build', '-trimpath', '-ldflags', "-s -w $ldVersion", '-o', 'vpn_specify-cli.exe', './cmd/vpn_specify')
     Get-Item vpn_specify.exe, vpn_specify-cli.exe | Format-Table Name, Length, LastWriteTime -AutoSize
+
+    if ($Linux) {
+        # só a versão de terminal (up/run/status); a interface gráfica e o
+        # -capture são exclusivos do Windows
+        $saved = $env:GOOS, $env:GOARCH, $env:CGO_ENABLED
+        try {
+            foreach ($arch in 'amd64', 'arm64') {
+                $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = 'linux', $arch, '0'
+                $name = "vpn_specify-$version-linux-$arch"
+                $stage = Join-Path 'dist' $name
+                Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+                New-Item -ItemType Directory -Force "$stage\licencas" | Out-Null
+                Invoke-Native go @('build', '-trimpath', '-ldflags', "-s -w $ldVersion", '-o', "$stage\vpn_specify", './cmd/vpn_specify')
+                Copy-Item LICENSE "$stage\LICENSE"
+                $mods = & go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}}|{{.Dir}}{{end}}{{end}}' ./cmd/vpn_specify
+                if ($LASTEXITCODE) { throw 'go list falhou' }
+                foreach ($m in ($mods | Where-Object { $_ } | Sort-Object -Unique)) {
+                    $path, $dir = $m -split '\|', 2
+                    foreach ($l in (Get-ChildItem $dir -File | Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING|NOTICE)' })) {
+                        $suffix = if ($l.Name -match '^NOTICE') { '-NOTICE' } else { '' }
+                        Copy-Item $l.FullName ("$stage\licencas\" + ($path -replace '[/\\:]', '_') + "$suffix.txt")
+                    }
+                }
+                $tgz = Join-Path 'dist' "$name.tar.gz"
+                Remove-Item $tgz -ErrorAction SilentlyContinue
+                # O tar do Windows (bsdtar) grava tudo como 0666, sem o bit +x.
+                # Uma especificação mtree define dono e permissões de cada item.
+                $distAbs = (Resolve-Path 'dist').Path
+                $spec = @('#mtree', "./$name type=dir mode=0755 uid=0 gid=0")
+                foreach ($item in (Get-ChildItem $stage -Recurse | Sort-Object FullName)) {
+                    $rel = './' + $item.FullName.Substring($distAbs.Length + 1).Replace('\', '/')
+                    if ($item.PSIsContainer) {
+                        $spec += "$rel type=dir mode=0755 uid=0 gid=0"
+                    } else {
+                        $mode = if ($item.Name -eq 'vpn_specify') { '0755' } else { '0644' }
+                        $spec += "$rel type=file mode=$mode uid=0 gid=0 contents=$rel"
+                    }
+                }
+                $specFile = Join-Path $distAbs "$name.mtree"
+                [IO.File]::WriteAllText($specFile, (($spec -join "`n") + "`n"), $utf8)
+                try {
+                    Invoke-Native tar @('-czf', $tgz, '-C', 'dist', "@$specFile")
+                } finally { Remove-Item $specFile -ErrorAction SilentlyContinue }
+                Write-Host "Linux ${arch}: $((Resolve-Path $tgz).Path)" -ForegroundColor Green
+            }
+        } finally {
+            $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = $saved
+        }
+    }
 
     if ($Dist) {
         $windivert = 'WinDivert.dll', 'WinDivert64.sys', 'LICENSE' | ForEach-Object { Join-Path 'windivert' $_ }

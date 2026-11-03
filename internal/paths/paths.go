@@ -4,13 +4,15 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // DataDir devolve a pasta de dados:
 //   - modo portátil: <pasta do exe>\data, se essa pasta já existir (ou houver
 //     um arquivo "portable" ao lado do exe);
 //   - instalado: %LOCALAPPDATA%\vpn_specify (Arquivos de Programas não é
-//     gravável sem Administrador).
+//     gravável sem Administrador);
+//   - Linux/macOS: ~/.config/vpn_specify (ou $XDG_CONFIG_HOME/vpn_specify).
 func DataDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -24,7 +26,11 @@ func DataDir() string {
 	if _, err := os.Stat(filepath.Join(dir, "portable")); err == nil {
 		return portable
 	}
-	if base, err := os.UserCacheDir(); err == nil { // %LOCALAPPDATA%
+	base, err := os.UserConfigDir()
+	if runtime.GOOS == "windows" {
+		base, err = os.UserCacheDir() // %LOCALAPPDATA%
+	}
+	if err == nil {
 		return filepath.Join(base, "vpn_specify")
 	}
 	return portable

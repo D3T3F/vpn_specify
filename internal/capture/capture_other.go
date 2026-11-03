@@ -10,5 +10,5 @@ import (
 
 // Start só existe no Windows (usa o driver WinDivert).
 func Start(tun tunnel.Tunnel, exeNames []string, verbose bool) (Controller, error) {
-	return nil, errors.New("-capture só está disponível no Windows")
+	return nil, errors.New("-capture só está disponível no Windows; aqui use \"vpn_specify run <programa>\" (proxy) ou -L para endereços fixos")
 }

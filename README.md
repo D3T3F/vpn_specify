@@ -16,6 +16,8 @@ Sem serviço rodando em segundo plano. Dois executáveis do mesmo código:
 - `vpn_specify.exe`: interface gráfica (sem console).
 - `vpn_specify-cli.exe`: os comandos de terminal (`up`, `run`, `status`).
 
+No Linux existe a versão de terminal (veja [Linux](#linux)).
+
 ## Instalação
 
 Baixe/gere o `vpn_specify-<versão>-win64.zip` (veja [Compilar](#compilar)),
@@ -186,6 +188,44 @@ Os nomes (DNS) são resolvidos **dentro da VPN**, então nomes internos
 - O proxy escuta só em `127.0.0.1`, mas **qualquer programa do seu PC** pode
   usá-lo enquanto o `up` estiver rodando.
 
+## Linux
+
+No Linux funcionam os comandos de terminal: `up`, `run`, `status` e `-L`,
+com WireGuard e OpenVPN, nas mesmas portas do Windows. A interface gráfica,
+o instalador e o `-capture` continuam só no Windows.
+
+```sh
+tar -xzf vpn_specify-<versão>-linux-amd64.tar.gz   # ou -linux-arm64
+sudo install vpn_specify-<versão>-linux-amd64/vpn_specify /usr/local/bin/
+
+vpn_specify up wg0.conf                    # WireGuard: sem root
+sudo vpn_specify up trabalho.ovpn          # OpenVPN: precisa de root e do pacote openvpn
+
+# em outro terminal, como usuário comum
+vpn_specify run chrome                     # acha google-chrome-stable, chromium...
+vpn_specify run firefox
+vpn_specify run curl https://ifconfig.me
+vpn_specify status
+```
+
+Diferenças em relação ao Windows:
+
+- **OpenVPN**: no Linux, ligar o socket ao IP do túnel não basta para ele
+  sair pelo túnel. Por isso o proxy prende os sockets à interface `tun` com
+  `SO_BINDTODEVICE` e deixa o `rp_filter` dessa interface em modo *loose*.
+  Sem isso, distribuições com `rp_filter` estrito (Fedora, RHEL) descartariam
+  as respostas. Rotas e DNS do sistema continuam intocados, como no Windows.
+  Se o `vpn_specify` for morto, o `openvpn` recebe SIGTERM e sai também.
+- **`sudo vpn_specify up ... -- programa`**: o programa é aberto como quem
+  chamou o `sudo`, não como root. O perfil do navegador fica na home desse
+  usuário. Mesmo assim, o mais simples é rodar o `run` em outro terminal, sem
+  `sudo`.
+- **Perfis dos navegadores**: ficam em `~/.config/vpn_specify/profiles/`.
+  Firefox e Chromium instalados por snap (padrão no Ubuntu) não podem ler
+  pastas ocultas da home, então nesses casos o perfil vai para
+  `~/snap/<app>/common/vpn_specify/profiles/`.
+- **Apps que ignoram proxy**: sem `-capture`, use `-L` para endereços fixos.
+
 ## Licença
 
 [MIT](LICENSE). O texto aparece no programa (Preferências > Ver licença), no
@@ -209,6 +249,15 @@ Precisa de Go 1.26 ou mais novo (o `go` baixa o toolchain sozinho se necessário
 .\scripts\build.ps1 -Test    # roda go vet e os testes antes
 .\scripts\build.ps1 -Dist    # também gera o pacote com o instalador (veja abaixo)
 .\scripts\build.ps1 -Icon    # regenera ícone/versão dos .exe (precisa do windres/MinGW)
+.\scripts\build.ps1 -Linux   # também gera dist\vpn_specify-<versão>-linux-{amd64,arm64}.tar.gz
+```
+
+No próprio Linux:
+
+```sh
+./scripts/build.sh           # gera ./vpn_specify (terminal)
+./scripts/build.sh -test     # roda go vet e os testes antes
+sudo -E go test ./internal/tunnel   # inclui o teste da interface tun (precisa de root)
 ```
 
 O `-Dist` gera `dist\vpn_specify-<versão>-win64.zip`, com:
@@ -255,15 +304,15 @@ internal/
   launcher/             abre apps configurados para usar o proxy
   netcheck/             verificação do IP público (TCP e UDP)
   gui/                  interface WebView2 e agente; página em gui/web/
-  platform/             APIs do Windows: UAC, DPAPI, atalhos, Job Object, processos
+  platform/             APIs do sistema: UAC, DPAPI, atalhos, Job Object (Windows); sudo, Pdeathsig (Linux)
   setup/                instalar/desinstalar; tela em setup/web/
   brand/                logotipo usado pelo app e pelo instalador
   version/              versão (definida no build a partir de VERSION)
   textutil/             utilitários de texto
 license.go, LICENSE     licença MIT (embutida nos executáveis)
 assets/                 ícone, modelo dos recursos (.rc) e LEIA-ME do pacote
-scripts/                build.ps1
-dist/                   pacotes gerados pelo -Dist (não versionado)
+scripts/                build.ps1 (Windows) e build.sh (Linux)
+dist/                   pacotes gerados pelo -Dist e pelo -Linux (não versionado)
 windivert/              driver WinDivert (baixado à parte, não versionado)
 data/                   dados do usuário, criado em tempo de execução (não versionado)
 ```

@@ -12,8 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"vpn_specify/internal/platform"
@@ -34,6 +36,9 @@ import (
 // usa o modelo "strong host" no envio: um socket ligado ao IP do túnel só
 // pode sair pela interface do túnel, e usa aquela rota de métrica 9999.
 // Assim, só o tráfego do proxy passa pela VPN.
+//
+// No Linux ("weak host") isso não vale: lá os sockets também são presos à
+// interface do túnel com SO_BINDTODEVICE (veja bind_linux.go).
 
 var ovpnStripDirectives = map[string]bool{
 	"redirect-gateway":  true,
@@ -49,6 +54,7 @@ var ovpnStripDirectives = map[string]bool{
 type ovpnTunnel struct {
 	cmd     *exec.Cmd
 	localIP net.IP
+	ifName  string // interface do túnel; só usada no Linux (SO_BINDTODEVICE)
 	dns     []netip.Addr
 	tmpDir  string
 	exited  chan struct{}
@@ -71,6 +77,14 @@ func findOpenVPN(explicit string) (string, error) {
 	}
 	if p, err := exec.LookPath("openvpn"); err == nil {
 		return p, nil
+	}
+	if runtime.GOOS != "windows" {
+		for _, p := range []string{"/usr/sbin/openvpn", "/usr/local/sbin/openvpn"} { // sudo nem sempre tem sbin no PATH
+			if _, err := os.Stat(p); err == nil {
+				return p, nil
+			}
+		}
+		return "", errors.New("openvpn não encontrado; instale o pacote openvpn (ex.: sudo apt install openvpn) ou use -openvpn <caminho>")
 	}
 	for _, c := range []string{`%ProgramFiles%\OpenVPN\bin\openvpn.exe`, `%ProgramFiles(x86)%\OpenVPN\bin\openvpn.exe`} {
 		p := platform.ExpandEnv(c)
@@ -161,6 +175,9 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		return nil, err
 	}
 	if !platform.IsElevated() {
+		if runtime.GOOS != "windows" {
+			return nil, errors.New("o modo OpenVPN precisa de root (o OpenVPN cria uma interface tun): rode com sudo. O modo WireGuard não precisa")
+		}
 		return nil, errors.New("o modo OpenVPN precisa de um terminal aberto como Administrador (o OpenVPN cria um adaptador de rede). " +
 			"O modo WireGuard não precisa")
 	}
@@ -226,6 +243,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		stopEvent = signal
 	}
 	cmd := exec.Command(exe, args...)
+	platform.KillWithParent(cmd)
 	if o.NoConsole {
 		platform.HideConsole(cmd)
 		cmd.Stderr = logWriter("[openvpn] ")
@@ -329,6 +347,10 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		t.kill()
 		return nil, err
 	}
+	if t.ifName, err = prepareTunnelInterface(t.localIP); err != nil {
+		t.kill()
+		return nil, err
+	}
 	if len(t.dns) == 0 {
 		log.Printf("aviso: a VPN não enviou servidores DNS; nomes serão resolvidos pelo DNS normal do PC (use -dns para mudar)")
 	}
@@ -392,7 +414,7 @@ func waitForLocalAddr(ip net.IP, timeout time.Duration) error {
 }
 
 func (t *ovpnTunnel) dialer(network string) *net.Dialer {
-	d := &net.Dialer{}
+	d := &net.Dialer{Control: bindControl(t.ifName)}
 	if strings.HasPrefix(network, "udp") {
 		d.LocalAddr = &net.UDPAddr{IP: t.localIP}
 	} else {
@@ -453,9 +475,11 @@ func (t *ovpnTunnel) DialContext(ctx context.Context, network, addr string) (net
 }
 
 // ListenUDP liga o socket ao IP do túnel; pelo mesmo motivo do TCP (strong
-// host), os datagramas só saem pela interface da VPN.
+// host no Windows, SO_BINDTODEVICE no Linux), os datagramas só saem pela
+// interface da VPN.
 func (t *ovpnTunnel) ListenUDP() (net.PacketConn, error) {
-	return net.ListenUDP("udp4", &net.UDPAddr{IP: t.localIP})
+	lc := net.ListenConfig{Control: bindControl(t.ifName)}
+	return lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort(t.localIP.String(), "0"))
 }
 
 func (t *ovpnTunnel) LookupIP(ctx context.Context, host string) (net.IP, error) {
@@ -484,6 +508,10 @@ func (t *ovpnTunnel) Close() error {
 		if t.stopEv != nil {
 			t.stopEv()
 			wait = 10 * time.Second
+		} else if runtime.GOOS != "windows" {
+			// fora do Windows o SIGTERM faz o openvpn sair limpo (removendo
+			// a rota); cobre também o caso de não ter recebido o Ctrl+C
+			_ = t.cmd.Process.Signal(syscall.SIGTERM)
 		}
 		select {
 		case <-t.exited:
