@@ -44,10 +44,16 @@ func prepareTunnelInterface(ip net.IP) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if os.Geteuid() == 0 { // sem root, quem ajusta é o openvpn-helper
+		setLooseRPFilter(name)
+	}
+	return name, nil
+}
+
+func setLooseRPFilter(name string) {
 	if err := os.WriteFile("/proc/sys/net/ipv4/conf/"+name+"/rp_filter", []byte("2"), 0o644); err != nil {
 		log.Printf("aviso: não consegui ajustar o rp_filter de %s (%v); se as respostas não chegarem, rode: sysctl -w net.ipv4.conf.%s.rp_filter=2", name, err, name)
 	}
-	return name, nil
 }
 
 // bindControl prende o socket à interface ifName.
@@ -61,6 +67,9 @@ func bindControl(ifName string) func(network, address string, c syscall.RawConn)
 			serr = unix.BindToDevice(int(fd), ifName)
 		}); err != nil {
 			return err
+		}
+		if serr == unix.EPERM {
+			return fmt.Errorf("SO_BINDTODEVICE %s: sem permissão (sem root, o Linux só permite a partir do kernel 5.7)", ifName)
 		}
 		if serr != nil {
 			return fmt.Errorf("SO_BINDTODEVICE %s: %w", ifName, serr)

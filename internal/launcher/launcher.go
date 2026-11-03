@@ -227,3 +227,10 @@ func ProxyArgsFor(path string, o Options) (pre []string, browser bool, err error
 	}
 	return pre, browser, nil
 }
+
+// BrowserProfileDir cria uma pasta de perfil própria para o navegador em
+// path (a janela da interface no Linux usa uma, separada da do usuário).
+func BrowserProfileDir(profile, path string) (string, error) {
+	app := strings.TrimSuffix(strings.ToLower(filepath.Base(path)), ".exe")
+	return profileDir(profile, app, platform.InvokingUser())
+}

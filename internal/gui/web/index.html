@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <title>vpn_specify</title>
+<script>window.VS_PLATFORM = "{{PLATFORM}}";</script>
+<!--{{BRIDGE}}-->
 <link rel="icon" href="{{LOGO}}">
 <style>
 :root {
@@ -76,6 +78,11 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
 #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 50; }
 .toast { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; max-width: 420px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
 .toast.error { border-left-color: var(--err); } .toast.ok { border-left-color: var(--ok); }
+.avatar img { width: 26px; height: 26px; object-fit: contain; }
+.item.pick { cursor: pointer; } .item.pick:hover { background: var(--chip); }
+#pickList { max-height: 52vh; overflow: auto; }
+input[type=search] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; width: 100%; }
+body.gone::after { content: "O vpn_specify foi fechado. Abra-o de novo pelo menu de aplicativos."; position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; background: rgba(0,0,0,.65); color: #fff; font-size: 16px; z-index: 100; }
 </style>
 </head>
 <body>
@@ -111,7 +118,7 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
   <section class="card wide">
     <h2>Apps na VPN <span class="spacer"></span><button class="small primary" onclick="addApp()">Adicionar app…</button></h2>
     <div id="apps" class="list"></div>
-    <p class="hint">Use “Criar atalho” para ter, por exemplo, “DiscordVPN” na pesquisa do Windows ao lado do Discord original.</p>
+    <p class="hint" id="appsHint">Use “Criar atalho” para ter, por exemplo, “DiscordVPN” na pesquisa do Windows ao lado do Discord original.</p>
   </section>
 
   <section class="card wide">
@@ -119,7 +126,7 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div style="display:grid;gap:10px">
       <label class="check"><input type="checkbox" id="autoDisc" onchange="vsSetAutoDisconnect(this.checked)">
         Desconectar a VPN quando os apps abertos por ela forem fechados (com esta janela fechada)</label>
-      <div class="row"><button class="small" onclick="mainShortcut()">Adicionar “vpn_specify” ao Menu Iniciar</button></div>
+      <div class="row"><button class="small" id="mainScBtn" onclick="mainShortcut()">Adicionar “vpn_specify” ao Menu Iniciar</button></div>
       <div class="row about"><span id="aboutText">vpn_specify</span><span class="spacer"></span>
         <button class="small" onclick="showLicense()">Ver licença</button></div>
     </div>
@@ -143,10 +150,10 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <label class="field">Argumentos<input type="text" id="aArgs"></label>
     <label class="field">VPN<select id="aConfig"></select></label>
     <div class="seg">
-      <label><input type="radio" name="aMode" value="capture" checked onchange="modeChanged()">
+      <label id="modeCaptureOpt"><input type="radio" name="aMode" value="capture" checked onchange="modeChanged()">
         <span><b>Captura completa</b> (recomendado)<small>Todo o tráfego do app, incluindo UDP e voz (Discord, jogos). Usa o driver WinDivert.</small></span></label>
       <label><input type="radio" name="aMode" value="proxy" onchange="modeChanged()">
-        <span><b>Proxy</b><small>Só TCP, para navegadores e apps Chromium/Electron. Não precisa de driver.</small></span></label>
+        <span><b>Proxy</b><small id="proxyDesc">Só TCP, para navegadores e apps Chromium/Electron. Não precisa de driver.</small></span></label>
     </div>
     <label class="field" id="aCaptureField">Processos capturados (separados por vírgula)<input type="text" id="aCapture" placeholder="discord.exe"></label>
     <div class="buttons">
@@ -156,12 +163,26 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
   </form>
 </dialog>
 
+<dialog id="pickDlg" class="wide">
+  <form method="dialog" onsubmit="return false">
+    <h3>Escolher app</h3>
+    <input type="search" id="pickSearch" placeholder="Pesquisar apps instalados…" oninput="renderPick()" autocomplete="off">
+    <div id="pickList" class="list"></div>
+    <div class="buttons">
+      <button type="button" onclick="pickFromFile()">Escolher arquivo…</button>
+      <span class="spacer"></span>
+      <button type="button" onclick="pickDlg.close()">Cancelar</button>
+    </div>
+  </form>
+</dialog>
+<input type="file" id="cfgFile" accept=".ovpn,.conf" hidden>
+
 <dialog id="scDlg">
   <form method="dialog" onsubmit="return false">
     <h3>Criar atalho</h3>
-    <label class="field">Nome do atalho (aparece na pesquisa do Windows)<input type="text" id="scName"></label>
+    <label class="field"><span id="scNameLabel">Nome do atalho (aparece na pesquisa do Windows)</span><input type="text" id="scName"></label>
     <label class="check"><input type="checkbox" id="scDesktop"> Criar também na Área de Trabalho</label>
-    <p class="hint" style="margin:0">Ao abrir o atalho, o vpn_specify conecta a VPN (pedindo permissão de Administrador se ainda não estiver conectado) e abre o app dentro dela.</p>
+    <p class="hint" style="margin:0" id="scHint">Ao abrir o atalho, o vpn_specify conecta a VPN (pedindo permissão de Administrador se ainda não estiver conectado) e abre o app dentro dela.</p>
     <div class="buttons">
       <button type="button" onclick="scDlg.close()">Cancelar</button>
       <button type="button" class="primary" onclick="createShortcut()">Criar atalho</button>
@@ -174,7 +195,7 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <h3 id="credTitle">Credenciais</h3>
     <label class="field">Usuário<input type="text" id="cUser" autocomplete="off"></label>
     <label class="field">Senha<input type="password" id="cPass" autocomplete="off" placeholder="(deixe vazio para manter a atual)"></label>
-    <p class="hint" style="margin:0">A senha é guardada protegida pelo Windows (DPAPI): só a sua conta deste PC consegue ler.</p>
+    <p class="hint" style="margin:0" id="credHint">A senha é guardada protegida pelo Windows (DPAPI): só a sua conta deste PC consegue ler.</p>
     <div class="buttons">
       <button type="button" onclick="credDlg.close()">Cancelar</button>
       <button type="button" class="primary" onclick="saveCred()">Salvar</button>
@@ -208,6 +229,7 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
 
 <script>
 const $ = id => document.getElementById(id);
+const LINUX = window.VS_PLATFORM === "linux";
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let state = null, lastConfigs = "", lastApps = "", logNext = 0, editing = null, scApp = null, credCfg = null, cfgEditing = null;
 
@@ -243,7 +265,7 @@ async function refresh() {
   let info = "";
   if (st.state === "conectado") {
     info += `<dt>Desde</dt><dd>${new Date(st.since * 1000).toLocaleTimeString()}</dd>`;
-    info += `<dt>Captura</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : "nenhum app capturado"}</dd>`;
+    if (!LINUX) info += `<dt>Captura</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : "nenhum app capturado"}</dd>`;
     info += `<dt>Proxy</dt><dd>SOCKS5 ${esc(st.socks)} · HTTP ${esc(st.http)}</dd>`;
   }
   if (st.state === "erro") info += `<dt>Erro</dt><dd class="err">${esc(st.error)}</dd>`;
@@ -276,9 +298,9 @@ async function refresh() {
     $("apps").innerHTML = s.apps.length ? s.apps.map(a => `
       <div class="item">
         <div class="avatar">${esc((a.name[0] || "?").toUpperCase())}</div>
-        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" ? "captura completa" : "proxy"}</span><span class="badge">${esc(a.config)}</span></div>
+        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !LINUX ? "captura completa" : "proxy"}</span><span class="badge">${esc(a.config)}</span></div>
           <div class="sub">${esc(a.path)} ${esc(a.args)}</div>
-          ${a.shortcut ? `<div class="sub">Atalho: ${esc(a.shortcut.split("\\").pop().replace(/\.lnk$/i, ""))}</div>` : ""}</div>
+          ${a.shortcut ? `<div class="sub">Atalho: ${esc(shortcutName(a.shortcut))}</div>` : ""}</div>
         <div class="actions">
           <button class="small primary" onclick='call(vsLaunchApp(${JSON.stringify(a.id)}), "Abrindo ${esc(a.name)} na VPN…")'>Abrir na VPN</button>
           <button class="small" onclick='openShortcut(${JSON.stringify(a.id)})'>Criar atalho</button>
@@ -312,12 +334,30 @@ async function checkIP() {
   const r = await vsCheckIP();
   $("ipOut").textContent = `direto ${r.direct} · VPN (TCP) ${r.vpn} · VPN (UDP) ${r.vpnUdp}`;
 }
+function shortcutName(p) {
+  const n = p.split(/[\\/]/).pop();
+  return LINUX ? n.replace(/^vpn_specify-/, "").replace(/\.desktop$/, "").replace(/_/g, " ") : n.replace(/\.lnk$/i, "");
+}
 async function importConfig() {
-  const c = await call(vsImportConfig());
+  const c = LINUX ? await readConfigFile() : await call(vsImportConfig());
   if (c) {
     toast(`VPN “${c.name}” importada.`, "ok");
     if (c.needAuth) openCred(c.name);
   }
+}
+// Linux: o seletor de arquivos é o do navegador, que entrega o conteúdo (não o caminho).
+function readConfigFile() {
+  return new Promise(resolve => {
+    const f = $("cfgFile");
+    f.value = "";
+    f.onchange = async () => {
+      const file = f.files[0];
+      if (!file) return resolve(null);
+      if (file.size > 1 << 20) { toast("Arquivo grande demais para uma configuração de VPN.", "error"); return resolve(null); }
+      try { resolve(await call(vsImportConfigData(file.name, await file.text()))); } catch (e) { resolve(null); }
+    };
+    f.click();
+  });
 }
 let about = null;
 (async () => {
@@ -377,17 +417,17 @@ function openAppDlg(a) {
   $("aName").value = a.name || ""; $("aPath").value = a.path || ""; $("aArgs").value = a.args || "";
   $("aCapture").value = (a.capture || []).join(", ");
   fillConfigSelect($("aConfig"), a.config || $("connSelect").value);
-  document.querySelector(`input[name=aMode][value=${a.mode === "proxy" ? "proxy" : "capture"}]`).checked = true;
+  document.querySelector(`input[name=aMode][value=${a.mode === "proxy" || LINUX ? "proxy" : "capture"}]`).checked = true;
   modeChanged();
   appDlg.showModal();
 }
 async function addApp() {
   if (!state.settings.configs.length) { toast("Importe uma VPN primeiro.", "error"); return; }
-  const p = await call(vsPickApp());
-  if (p) openAppDlg({ ...p, mode: "capture" });
+  const p = LINUX ? await chooseApp() : await call(vsPickApp());
+  if (p) openAppDlg({ ...p, mode: LINUX ? "proxy" : "capture" });
 }
 async function pickApp() {
-  const p = await call(vsPickApp());
+  const p = LINUX ? await chooseApp() : await call(vsPickApp());
   if (!p) return;
   Object.assign(editing, { path: p.path, args: p.args, workDir: p.workDir, icon: p.icon });
   $("aPath").value = p.path; $("aArgs").value = p.args;
@@ -417,9 +457,68 @@ function openShortcut(id, app) {
 async function createShortcut() {
   const lnk = await call(vsCreateShortcut(scApp.id, $("scName").value, $("scDesktop").checked));
   scDlg.close();
-  toast(`Atalho “${$("scName").value}” criado no Menu Iniciar. Procure por ele na pesquisa do Windows.`, "ok");
+  toast(LINUX ? `Atalho “${$("scName").value}” criado no menu de aplicativos.`
+    : `Atalho “${$("scName").value}” criado no Menu Iniciar. Procure por ele na pesquisa do Windows.`, "ok");
 }
-async function mainShortcut() { await call(vsCreateMainShortcut(), "Atalho “vpn_specify” criado no Menu Iniciar."); }
+async function mainShortcut() {
+  await call(vsCreateMainShortcut(), LINUX ? "Atalho “vpn_specify” criado no menu de aplicativos." : "Atalho “vpn_specify” criado no Menu Iniciar.");
+}
+
+// ---------- Linux: escolher entre os apps instalados (arquivos .desktop) ----------
+let pickResolve = null, pickApps = [], pickShown = [];
+async function chooseApp() {
+  const done = new Promise(res => pickResolve = res);
+  $("pickSearch").value = "";
+  $("pickList").innerHTML = `<div class="item empty">Carregando…</div>`;
+  pickDlg.showModal();
+  if (!pickApps.length) {
+    try { pickApps = (await vsListApps()) || []; } catch (e) { toast(String(e), "error"); }
+  }
+  renderPick();
+  $("pickSearch").focus();
+  return done;
+}
+function finishPick(v) {
+  const r = pickResolve;
+  pickResolve = null;
+  if (pickDlg.open) pickDlg.close();
+  if (r) r(v);
+}
+function renderPick() {
+  const q = $("pickSearch").value.trim().toLowerCase();
+  pickShown = pickApps.filter(a => !q || (a.name + " " + a.comment + " " + a.path).toLowerCase().includes(q));
+  $("pickList").innerHTML = pickShown.length ? pickShown.map((a, i) => `
+    <div class="item pick" data-i="${i}">
+      <div class="avatar">${a.iconFile ? `<img src="${esc(vsIconURL(a.iconFile))}" alt="">` : esc((a.name[0] || "?").toUpperCase())}</div>
+      <div class="grow"><div class="title">${esc(a.name)}</div>
+        <div class="sub">${esc(a.comment || (a.path + " " + a.args))}</div></div>
+    </div>`).join("") : `<div class="item empty">Nenhum app encontrado. Use “Escolher arquivo…”.</div>`;
+}
+async function pickFromFile() {
+  try { const p = await vsPickApp(); if (p) finishPick(p); }
+  catch (e) { toast(String(e), "error"); }
+}
+if (LINUX) {
+  pickDlg.addEventListener("close", () => finishPick(null));
+  $("pickList").addEventListener("click", e => {
+    const it = e.target.closest(".item.pick");
+    if (!it) return;
+    const a = pickShown[+it.dataset.i];
+    finishPick({ name: a.name, path: a.path, args: a.args, workDir: a.workDir, icon: a.icon, capture: [a.path.split("/").pop()] });
+  });
+  $("pickSearch").addEventListener("keydown", e => {
+    if (e.key === "Enter" && pickShown.length === 1) $("pickList").querySelector(".item.pick").click();
+  });
+  $("appsHint").textContent = "Use “Criar atalho” para ter, por exemplo, “DiscordVPN” no menu de aplicativos, ao lado do Discord original.";
+  $("mainScBtn").textContent = "Adicionar “vpn_specify” ao menu de aplicativos";
+  $("modeCaptureOpt").style.display = "none";
+  $("proxyDesc").textContent = "Pelo proxy local: navegadores, apps Chromium/Electron (Discord, Slack, VS Code…) e programas que respeitam HTTP_PROXY. A captura completa (UDP e voz) só existe no Windows.";
+  $("scNameLabel").textContent = "Nome do atalho (aparece no menu de aplicativos)";
+  $("scHint").textContent = "Ao abrir o atalho, o vpn_specify conecta a VPN e abre o app dentro dela. VPNs OpenVPN pedem a senha de administrador ao conectar.";
+  $("credHint").textContent = "A senha é guardada criptografada; a chave fica em ~/.local/share/vpn_specify, legível só pela sua conta.";
+  $("aPath").readOnly = false;
+  $("aPath").placeholder = "/usr/bin/programa";
+}
 
 refresh(); refreshLog();
 setInterval(refresh, 1000);

@@ -16,7 +16,8 @@ Sem serviço rodando em segundo plano. Dois executáveis do mesmo código:
 - `vpn_specify.exe`: interface gráfica (sem console).
 - `vpn_specify-cli.exe`: os comandos de terminal (`up`, `run`, `status`).
 
-No Linux existe a versão de terminal (veja [Linux](#linux)).
+No Linux é um executável só, `vpn_specify`, com interface gráfica e
+terminal (veja [Linux](#linux)).
 
 ## Instalação
 
@@ -190,14 +191,57 @@ Os nomes (DNS) são resolvidos **dentro da VPN**, então nomes internos
 
 ## Linux
 
-No Linux funcionam os comandos de terminal: `up`, `run`, `status` e `-L`,
-com WireGuard e OpenVPN, nas mesmas portas do Windows. A interface gráfica,
-o instalador e o `-capture` continuam só no Windows.
+No Linux funcionam a interface gráfica e os comandos de terminal (`up`,
+`run`, `status` e `-L`), com WireGuard e OpenVPN, nas mesmas portas do
+Windows. O instalador e o `-capture` continuam só no Windows.
 
 ```sh
 tar -xzf vpn_specify-<versão>-linux-amd64.tar.gz   # ou -linux-arm64
 sudo install vpn_specify-<versão>-linux-amd64/vpn_specify /usr/local/bin/
+vpn_specify                                # abre a interface gráfica
+```
 
+### Interface gráfica no Linux
+
+Abra `vpn_specify` sem argumentos. Na primeira vez, use **Preferências >
+Adicionar "vpn_specify" ao menu de aplicativos** para ter o ícone no menu.
+A tela é a mesma do Windows, com estas diferenças:
+
+- **Janela**: é a mesma página do Windows, servida pelo próprio vpn_specify
+  em `127.0.0.1` (porta aleatória, protegida por um token aleatório). Ela é
+  aberta como janela de app, sem abas nem barra de endereço, do Chrome,
+  Chromium, Edge, Brave ou Vivaldi, com um perfil separado. Sem nenhum
+  deles, ela abre como aba no navegador padrão. Funciona com X11 e Wayland.
+- **Sem root**: a interface roda como usuário comum. Ao conectar uma VPN
+  **OpenVPN**, o sistema pede a senha de administrador (`pkexec`, do
+  polkit) só para o `openvpn`. Ele fica num pequeno processo auxiliar que o
+  encerra quando você desconecta ou fecha o vpn_specify. Prender o socket ao
+  túnel sem root precisa do kernel 5.7 ou mais novo. WireGuard não pede
+  senha nenhuma.
+- **Adicionar app** mostra os apps do menu de aplicativos (arquivos
+  `.desktop`, inclusive flatpak e snap), com busca. **Escolher arquivo…**
+  usa o zenity ou o kdialog; sem eles, digite o caminho no campo Programa.
+- **Só o modo proxy**: não há captura completa. Navegadores, apps
+  Chromium/Electron (Discord, Slack, VS Code…) e programas que respeitam
+  `HTTP_PROXY` entram na VPN. Voz/UDP do Discord e jogos não entram.
+- **Criar atalho** grava um `.desktop` em `~/.local/share/applications/`
+  (aparece na pesquisa do menu, ao lado do app original) e, se marcado, na
+  Área de Trabalho.
+- **Credenciais**: a senha é cifrada (AES-GCM) com uma chave em
+  `~/.local/share/vpn_specify/secret.key` (permissão 0600), separada do
+  `settings.json`. Ela fica protegida pelas permissões do arquivo, como uma
+  chave SSH, e não pelo chaveiro do sistema. Senhas salvas no Windows (DPAPI)
+  precisam ser digitadas de novo.
+- **Dados**: `~/.config/vpn_specify/` (`configs/`, `settings.json`,
+  `vpn_specify.log`).
+
+O ciclo de vida é o do Windows. Ao abrir um atalho com a VPN desligada, a
+janela mostra o progresso, conecta, abre o app e fecha sozinha. Com a janela
+fechada, a VPN desliga uns 30 s depois que os apps abertos por ela fecharem.
+
+### Terminal no Linux
+
+```sh
 vpn_specify up wg0.conf                    # WireGuard: sem root
 sudo vpn_specify up trabalho.ovpn          # OpenVPN: precisa de root e do pacote openvpn
 
@@ -303,7 +347,7 @@ internal/
   control/              API local entre instâncias (atalhos sem novo UAC)
   launcher/             abre apps configurados para usar o proxy
   netcheck/             verificação do IP público (TCP e UDP)
-  gui/                  interface WebView2 e agente; página em gui/web/
+  gui/                  interface e agente: WebView2 (Windows) ou página local + janela de app (Linux); página em gui/web/
   platform/             APIs do sistema: UAC, DPAPI, atalhos, Job Object (Windows); sudo, Pdeathsig (Linux)
   setup/                instalar/desinstalar; tela em setup/web/
   brand/                logotipo usado pelo app e pelo instalador

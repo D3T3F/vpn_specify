@@ -14,3 +14,6 @@ var logoPNG []byte
 func LogoDataURI() string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(logoPNG)
 }
+
+// LogoPNG devolve o logotipo em PNG (ícone dos atalhos .desktop no Linux).
+func LogoPNG() []byte { return logoPNG }

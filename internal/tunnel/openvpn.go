@@ -61,6 +61,7 @@ type ovpnTunnel struct {
 	done    chan error
 	once    sync.Once
 	stopEv  func() // sinaliza o openvpn para sair (modo sem console)
+	helper  bool   // Linux sem root: openvpn roda via pkexec + openvpn-helper
 
 	cacheMu sync.Mutex
 	cache   map[string]dnsCacheEntry
@@ -174,7 +175,11 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !platform.IsElevated() {
+	// Linux, interface gráfica sem root: o openvpn sobe via pkexec (o sistema
+	// pede a senha de administrador, como o UAC no Windows) por meio do
+	// "vpn_specify openvpn-helper" (veja RunOpenVPNHelper).
+	useHelper := runtime.GOOS == "linux" && o.NoConsole && !platform.IsElevated()
+	if !platform.IsElevated() && !useHelper {
 		if runtime.GOOS != "windows" {
 			return nil, errors.New("o modo OpenVPN precisa de root (o OpenVPN cria uma interface tun): rode com sudo. O modo WireGuard não precisa")
 		}
@@ -231,7 +236,30 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 	args = append(args, authArgs...)
 	var stopEvent func()
-	if o.NoConsole {
+	var cmd *exec.Cmd
+	switch {
+	case useHelper:
+		pk, err := exec.LookPath("pkexec")
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, errors.New("o modo OpenVPN precisa de root: instale o polkit (comando pkexec) ou abra o vpn_specify com sudo. O modo WireGuard não precisa")
+		}
+		self, err := os.Executable()
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, err
+		}
+		cmd = exec.Command(pk, append([]string{self, "openvpn-helper", exe}, args...)...)
+		// o helper encerra o openvpn quando esta entrada fecha (ao
+		// desconectar ou se o vpn_specify morrer); sinais não chegam a um
+		// processo root
+		in, err := cmd.StdinPipe()
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, err
+		}
+		stopEvent = func() { in.Close() }
+	case o.NoConsole && runtime.GOOS == "windows":
 		// Sem console não há Ctrl+C: o openvpn sai de forma limpa (removendo
 		// as rotas) quando sinalizamos este evento.
 		name, signal, err := platform.NewStopEvent()
@@ -241,8 +269,10 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		}
 		args = append(args, "--service", name, "0")
 		stopEvent = signal
+		cmd = exec.Command(exe, args...)
+	default:
+		cmd = exec.Command(exe, args...)
 	}
-	cmd := exec.Command(exe, args...)
 	platform.KillWithParent(cmd)
 	if o.NoConsole {
 		platform.HideConsole(cmd)
@@ -266,7 +296,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 
 	t := &ovpnTunnel{
-		cmd: cmd, tmpDir: tmpDir, stopEv: stopEvent,
+		cmd: cmd, tmpDir: tmpDir, stopEv: stopEvent, helper: useHelper,
 		exited: make(chan struct{}), done: make(chan error, 1),
 		cache: map[string]dnsCacheEntry{},
 	}
@@ -321,6 +351,10 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		return nil, err
 	case err := <-t.done:
 		t.kill()
+		var ee *exec.ExitError
+		if useHelper && errors.As(err, &ee) && (ee.ExitCode() == 126 || ee.ExitCode() == 127) {
+			return nil, errors.New("permissão de administrador negada (o OpenVPN precisa dela para criar a interface tun)")
+		}
 		return nil, fmt.Errorf("openvpn falhou ao conectar: %w (rode com -v para ver o log completo)", err)
 	case <-time.After(5 * time.Minute):
 		t.kill()
@@ -494,10 +528,21 @@ func (t *ovpnTunnel) Done() <-chan error { return t.done }
 
 func (t *ovpnTunnel) kill() {
 	t.once.Do(func() {
-		_ = t.cmd.Process.Kill()
-		<-t.exited
+		if t.stopEv != nil {
+			t.stopEv()
+		}
+		_ = t.cmd.Process.Kill() // não funciona no modo helper (processo root); o stopEv cobre
+		t.waitExit(15 * time.Second)
 		os.RemoveAll(t.tmpDir)
 	})
+}
+
+func (t *ovpnTunnel) waitExit(d time.Duration) {
+	select {
+	case <-t.exited:
+	case <-time.After(d):
+		log.Printf("aviso: o openvpn não terminou; encerre-o manualmente")
+	}
 }
 
 // Close espera o openvpn sair sozinho (ele também recebe o Ctrl+C do console
@@ -517,7 +562,7 @@ func (t *ovpnTunnel) Close() error {
 		case <-t.exited:
 		case <-time.After(wait):
 			_ = t.cmd.Process.Kill()
-			<-t.exited
+			t.waitExit(5 * time.Second)
 		}
 		os.RemoveAll(t.tmpDir)
 	})

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compila o vpn_specify para Linux (só a versão de terminal: up, run, status).
+# Compila o vpn_specify para Linux (interface gráfica e terminal: up, run, status).
 #
 #   ./scripts/build.sh          gera ./vpn_specify na raiz do projeto
 #   ./scripts/build.sh -test    roda go vet e os testes antes

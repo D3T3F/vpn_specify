@@ -15,6 +15,7 @@ import (
 
 	"vpn_specify/internal/gui"
 	"vpn_specify/internal/setup"
+	"vpn_specify/internal/tunnel"
 )
 
 func usage() {
@@ -70,6 +71,16 @@ func main() {
 	case "agent":
 		err = gui.AgentMain(os.Args[2:])
 		if err != nil {
+			os.Exit(1)
+		}
+		return
+	case "openvpn-helper": // Linux: aberto via pkexec pela interface gráfica (veja tunnel.RunOpenVPNHelper)
+		if err := tunnel.RunOpenVPNHelper(os.Args[2:]); err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				os.Exit(exitErr.ExitCode())
+			}
+			fmt.Fprintln(os.Stderr, "erro:", err)
 			os.Exit(1)
 		}
 		return

@@ -3,16 +3,12 @@
 package gui
 
 import (
-	_ "embed"
 	"errors"
 	"net/url"
 
 	"vpn_specify/internal/control"
 	"vpn_specify/internal/platform"
 )
-
-//go:embed web/index.html
-var uiHTML string
 
 // Main: "vpn_specify.exe" sem argumentos.
 func Main() error {

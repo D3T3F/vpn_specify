@@ -13,36 +13,17 @@ import (
 	"regexp"
 	"strings"
 	vpnspecify "vpn_specify"
-	"vpn_specify/internal/brand"
 	"vpn_specify/internal/version"
 
 	webview2 "github.com/jchv/go-webview2"
 	"golang.org/x/sys/windows"
 
-	"vpn_specify/internal/engine"
 	"vpn_specify/internal/netcheck"
 	"vpn_specify/internal/platform"
 	"vpn_specify/internal/store"
 )
 
 // ---------- janela ----------
-
-type uiState struct {
-	Status   engine.Status  `json:"status"`
-	Settings store.Settings `json:"settings"`
-	Notice   string         `json:"notice"`
-	DataDir  string         `json:"dataDir"`
-	Watching []string       `json:"watching"`
-}
-
-type pickedApp struct {
-	Name    string   `json:"name"`
-	Path    string   `json:"path"`
-	Args    string   `json:"args"`
-	WorkDir string   `json:"workDir"`
-	Icon    string   `json:"icon"`
-	Capture []string `json:"capture"`
-}
 
 var processStartRe = regexp.MustCompile(`(?i)--processStart\s+"?([^"\s]+)"?`)
 
@@ -233,7 +214,7 @@ func (a *agent) runWindow(autoClose bool) {
 		return out
 	}))
 
-	w.SetHtml(strings.ReplaceAll(uiHTML, "{{LOGO}}", brand.LogoDataURI()))
+	w.SetHtml(pageHTML("windows", ""))
 	a.mu.Lock()
 	a.w = w
 	a.autoClose = autoClose

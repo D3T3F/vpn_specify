@@ -25,7 +25,7 @@
     licencas\              licenças dos componentes de terceiros
 
 .PARAMETER Linux
-  Gera também a versão de terminal para Linux (amd64 e arm64):
+  Gera também a versão para Linux (interface e terminal; amd64 e arm64):
   dist\vpn_specify-<versão>-linux-<arq>.tar.gz, com o executável
   vpn_specify, LICENSE e licencas\.
 
@@ -88,8 +88,8 @@ try {
     Get-Item vpn_specify.exe, vpn_specify-cli.exe | Format-Table Name, Length, LastWriteTime -AutoSize
 
     if ($Linux) {
-        # só a versão de terminal (up/run/status); a interface gráfica e o
-        # -capture são exclusivos do Windows
+        # um executável só (interface gráfica e terminal), sem cgo; o
+        # instalador e o -capture são exclusivos do Windows
         $saved = $env:GOOS, $env:GOARCH, $env:CGO_ENABLED
         try {
             foreach ($arch in 'amd64', 'arm64') {
@@ -127,7 +127,9 @@ try {
                 $specFile = Join-Path $distAbs "$name.mtree"
                 [IO.File]::WriteAllText($specFile, (($spec -join "`n") + "`n"), $utf8)
                 try {
-                    Invoke-Native tar @('-czf', $tgz, '-C', 'dist', "@$specFile")
+                    # o tar do Windows (bsdtar), não o GNU tar do Git, que não lê mtree
+                    $bsdtar = Join-Path $env:SystemRoot 'System32\tar.exe'
+                    Invoke-Native $bsdtar @('-czf', $tgz, '-C', 'dist', "@$specFile")
                 } finally { Remove-Item $specFile -ErrorAction SilentlyContinue }
                 Write-Host "Linux ${arch}: $((Resolve-Path $tgz).Path)" -ForegroundColor Green
             }
