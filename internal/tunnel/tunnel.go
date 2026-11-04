@@ -35,6 +35,11 @@ type Options struct {
 	// window and uses an event (Windows) or the helper (Linux) to stop it.
 	NoConsole          bool
 	AuthUser, AuthPass string
+	// InstallOpenVPN, when set, is called if openvpn is missing: it asks the
+	// user and installs it. Returning ErrOpenVPNMissing means "declined".
+	InstallOpenVPN func(progress func(string)) error
+	// Progress, when set, receives short messages about slow preparation steps.
+	Progress func(string)
 }
 
 // Errors the caller may want to recognize (e.g. not to retry them).
@@ -43,6 +48,8 @@ var (
 	ErrNeedsCredentials = i18n.Sentinel("this VPN asks for a user and password: fill in the configuration's credentials")
 	// ErrAdminDenied: the administrator password prompt was refused.
 	ErrAdminDenied = i18n.Sentinel("administrator permission denied (OpenVPN needs it to create the tun interface)")
+	// ErrOpenVPNMissing: openvpn is not installed (and was not installed now).
+	ErrOpenVPNMissing = openVPNMissing()
 	// ErrNeedsAdmin: OpenVPN mode started without root in a terminal.
 	ErrNeedsAdmin = i18n.Sentinel("OpenVPN mode needs root (OpenVPN creates a tun interface): run with sudo. WireGuard mode does not")
 )

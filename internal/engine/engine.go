@@ -33,6 +33,7 @@ type Status struct {
 	State    string   `json:"state"` // one of the State* constants
 	Config   string   `json:"config"`
 	Error    string   `json:"error"`
+	Detail   string   `json:"detail"` // what is happening while connecting
 	Since    int64    `json:"since"`
 	Captured []string `json:"captured"`
 	Socks    string   `json:"socks"`
@@ -136,6 +137,13 @@ func (e *Engine) Connect(name, path string, o tunnel.Options, forwards []proxy.F
 	e.mu.Unlock()
 
 	log.Printf("connecting to %q...", name)
+	o.Progress = func(s string) {
+		e.mu.Lock()
+		if e.gen == gen && e.status.State == StateConnecting {
+			e.status.Detail = s
+		}
+		e.mu.Unlock()
+	}
 	tun, err := tunnel.Open(path, o)
 	if err != nil {
 		return fail(err)

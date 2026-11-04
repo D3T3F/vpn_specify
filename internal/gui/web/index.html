@@ -350,6 +350,7 @@ async function refresh() {
     if (!LINUX) info += `<dt>${esc(t("Capture"))}</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : esc(t("no app captured"))}</dd>`;
     info += `<dt>${esc(t("Proxy"))}</dt><dd>SOCKS5 ${esc(st.socks)} · HTTP ${esc(st.http)}</dd>`;
   }
+  if (st.state === "connecting" && st.detail) info += `<dd style="grid-column:1/-1">${esc(st.detail)}</dd>`;
   if (st.state === "error") info += `<dt>${esc(t("Error"))}</dt><dd class="err">${esc(st.error)}</dd>`;
   $("connInfo").innerHTML = info;
   $("autoDisc").checked = s.autoDisconnect;

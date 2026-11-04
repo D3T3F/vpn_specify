@@ -30,8 +30,8 @@ REQUIREMENTS
 - Windows 10 or 11, 64-bit.
 - Microsoft Edge WebView2 Runtime (included in Windows 11 and in updated
   Windows 10).
-- For OpenVPN VPNs (.ovpn): OpenVPN 2.6 or newer installed
-  (https://openvpn.net/community-downloads/). WireGuard VPNs (.conf) need
+- For OpenVPN VPNs (.ovpn): OpenVPN 2.6 or newer. If it is missing, vpn_specify
+  offers to install it when you connect. WireGuard VPNs (.conf) need
   nothing extra.
 
 

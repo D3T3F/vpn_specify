@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"sync"
 
 	"vpn_specify/internal/i18n"
+	"vpn_specify/internal/ovpninstall"
 	"vpn_specify/internal/paths"
 
 	"vpn_specify/internal/platform"
@@ -295,7 +297,7 @@ func (st *Store) ConfigFor(name string) (string, tunnel.Options, error) {
 	if c == nil {
 		return "", tunnel.Options{}, i18n.Error("the configuration {0} does not exist", strconv.Quote(name))
 	}
-	o := tunnel.Options{NoConsole: true, AuthUser: c.User}
+	o := tunnel.Options{NoConsole: true, AuthUser: c.User, InstallOpenVPN: installOpenVPNGUI}
 	if c.PassEnc != "" {
 		p, err := platform.Unprotect(c.PassEnc)
 		if err != nil {
@@ -340,6 +342,16 @@ func (st *Store) RemoveConfig(name string) error {
 		}
 	}
 	return nil
+}
+
+// installOpenVPNGUI asks in a dialog on Windows, where the agent is already
+// elevated and nothing else would ask. On Linux pkexec's password dialog is
+// the question: dismissing it cancels the installation.
+func installOpenVPNGUI(progress func(string)) error {
+	if !platform.Confirm("vpn_specify", ovpninstall.Question()) {
+		return tunnel.ErrOpenVPNMissing
+	}
+	return ovpninstall.Install(context.Background(), progress)
 }
 
 // ErrAppNotFound: no app with that id.

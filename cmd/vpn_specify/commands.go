@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/launcher"
 	"vpn_specify/internal/netcheck"
+	"vpn_specify/internal/ovpninstall"
 	"vpn_specify/internal/proxy"
 	"vpn_specify/internal/tunnel"
 )
@@ -53,7 +56,7 @@ func cmdUp(args []string) error {
 
 	eng := engine.New()
 	eng.SocksAddr, eng.HTTPAddr, eng.Verbose = *socksAddr, *httpAddr, *verbose
-	if err := eng.Connect(config, config, tunnel.Options{DNS: dns, OpenVPNPath: *ovpnPath, Verbose: *verbose}, forwards); err != nil {
+	if err := eng.Connect(config, config, tunnel.Options{DNS: dns, OpenVPNPath: *ovpnPath, Verbose: *verbose, InstallOpenVPN: installOpenVPNCLI}, forwards); err != nil {
 		return err
 	}
 	defer eng.Disconnect()
@@ -94,6 +97,16 @@ func cmdUp(args []string) error {
 			}
 		}
 	}
+}
+
+// installOpenVPNCLI asks in the terminal before installing OpenVPN.
+func installOpenVPNCLI(progress func(string)) error {
+	fmt.Fprint(os.Stderr, ovpninstall.Question()+" [y/N] ")
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	if !yesAnswer(strings.ToLower(strings.TrimSpace(line))) {
+		return tunnel.ErrOpenVPNMissing
+	}
+	return ovpninstall.Install(context.Background(), progress)
 }
 
 func cmdRun(args []string) error {

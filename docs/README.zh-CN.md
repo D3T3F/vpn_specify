@@ -109,6 +109,8 @@ vpn_specify 会连接 VPN 并打开所有勾选的应用，不显示窗口。在
 | **WireGuard**（`.conf`） | 隧道完全在进程内运行（wireguard-go + gVisor TCP/IP 协议栈）。不会创建网络适配器。 | 否 |
 | **OpenVPN**（`.ovpn`） | 使用已安装的 `openvpn`，但会阻止一切会更改系统路由或 DNS 的内容（redirect-gateway、路由、DNS、block-outside-dns）。代理把自己的套接字绑定到隧道上，正是这一点让流量走 VPN。 | 是（OpenVPN 会创建适配器） |
 
+如果缺少 OpenVPN,vpn_specify 会在连接时提示安装:在 Windows 上,它下载官方安装程序(用固定的 SHA-256 校验)并静默安装,不包含 OpenVPN 图形界面;在 Linux 上,它安装发行版的 `openvpn` 软件包(apt、dnf、yum、zypper、pacman 或 apk)。您也可以自行安装。
+
 ## 用法
 
 ```powershell

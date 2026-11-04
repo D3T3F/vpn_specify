@@ -129,6 +129,8 @@ toutes deux utilisent les mêmes ports locaux (10799–10801).
 | **WireGuard** (`.conf`) | Le tunnel tourne entièrement dans le processus (wireguard-go + pile TCP/IP gVisor). Aucune carte réseau n’est créée. | Non |
 | **OpenVPN** (`.ovpn`) | Utilise l’`openvpn` installé, mais bloque tout ce qui modifierait le routage ou le DNS du système (redirect-gateway, routes, DNS, block-outside-dns). Le proxy lie ses sockets au tunnel, c’est ce qui fait passer le trafic par le VPN. | Oui (OpenVPN crée une carte) |
 
+Si OpenVPN manque, vpn_specify propose de l'installer à la connexion : sous Windows, il télécharge le programme d'installation officiel (vérifié avec un SHA-256 fixe) et l'installe silencieusement, sans l'interface d'OpenVPN ; sous Linux, il installe le paquet `openvpn` de la distribution (apt, dnf, yum, zypper, pacman ou apk). Vous pouvez aussi l'installer vous-même.
+
 ## Utilisation
 
 ```powershell

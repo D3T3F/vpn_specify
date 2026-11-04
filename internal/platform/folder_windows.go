@@ -73,6 +73,9 @@ const (
 	AnswerNo     = 7
 )
 
+// Confirm asks a Yes/No question and reports whether the answer was Yes.
+func Confirm(title, text string) bool { return Ask(title, text, false) == AnswerYes }
+
 // Ask asks a Yes/No (or Yes/No/Cancel) question and returns AnswerYes,
 // AnswerNo or AnswerCancel.
 func Ask(title, text string, withCancel bool) int {

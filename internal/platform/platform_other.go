@@ -21,6 +21,9 @@ func HideConsole(cmd *exec.Cmd) {}
 
 func ElevateSelf(args []string) error { return errWindowsOnly }
 
+// Confirm: outside Windows the action that follows (pkexec) asks by itself.
+func Confirm(title, text string) bool { return true }
+
 // MessageBox shows a notice outside the main window: zenity (GNOME),
 // kdialog (KDE) or notify-send; without any of them, only in the terminal.
 // flags follows the Windows MessageBox: 0x10 = error.

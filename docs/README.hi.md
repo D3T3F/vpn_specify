@@ -122,6 +122,8 @@ vpn_specify-setup.exe /silent [/dir=D:\Apps] [/nodesktop] [/nostartmenu] [/lang=
 | **WireGuard** (`.conf`) | टनल पूरी तरह प्रोसेस के अंदर चलता है (wireguard-go + gVisor TCP/IP स्टैक)। कोई नेटवर्क एडेप्टर नहीं बनता। | नहीं |
 | **OpenVPN** (`.ovpn`) | इंस्टॉल किए गए `openvpn` का उपयोग करता है, पर हर उस चीज़ को रोकता है जो सिस्टम की रूटिंग या DNS बदल देती (redirect-gateway, रूट, DNS, block-outside-dns)। प्रॉक्सी अपने सॉकेट टनल से बाँधता है, और इसी से ट्रैफ़िक VPN से जाता है। | हाँ (OpenVPN एक एडेप्टर बनाता है) |
 
+यदि OpenVPN नहीं है, तो vpn_specify कनेक्ट करते समय उसे इंस्टॉल करने का विकल्प देता है: Windows पर यह आधिकारिक इंस्टॉलर डाउनलोड करता है (एक निश्चित SHA-256 से जाँचा गया) और OpenVPN GUI के बिना चुपचाप इंस्टॉल करता है; Linux पर यह डिस्ट्रीब्यूशन का `openvpn` पैकेज इंस्टॉल करता है (apt, dnf, yum, zypper, pacman या apk)। आप इसे स्वयं भी इंस्टॉल कर सकते हैं।
+
 ## उपयोग
 
 ```powershell

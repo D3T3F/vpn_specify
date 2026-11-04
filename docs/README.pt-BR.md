@@ -124,6 +124,8 @@ usam as mesmas portas locais (10799–10801).
 | **WireGuard** (`.conf`) | O túnel roda inteiro dentro do processo (wireguard-go + pilha TCP/IP gVisor). Nenhum adaptador de rede é criado. | Não |
 | **OpenVPN** (`.ovpn`) | Usa o `openvpn` instalado, mas bloqueia tudo que mudaria o roteamento ou o DNS do sistema (redirect-gateway, rotas, DNS, block-outside-dns). O proxy prende os sockets ao túnel, e é isso que manda o tráfego pela VPN. | Sim (o OpenVPN cria um adaptador) |
 
+Se o OpenVPN não estiver instalado, o vpn_specify oferece a instalação ao conectar: no Windows, baixa o instalador oficial (conferido com um SHA-256 fixo) e instala em silêncio, sem a interface do OpenVPN; no Linux, instala o pacote `openvpn` da distribuição (apt, dnf, yum, zypper, pacman ou apk). Você também pode instalá-lo por conta própria.
+
 ## Uso
 
 ```powershell

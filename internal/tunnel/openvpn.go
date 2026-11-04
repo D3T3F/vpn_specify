@@ -84,7 +84,7 @@ func findOpenVPN(explicit string) (string, error) {
 				return p, nil
 			}
 		}
-		return "", i18n.Error("openvpn not found; install the openvpn package (e.g. sudo apt install openvpn) or use -openvpn <path>")
+		return "", ErrOpenVPNMissing
 	}
 	for _, c := range []string{`%ProgramFiles%\OpenVPN\bin\openvpn.exe`, `%ProgramFiles(x86)%\OpenVPN\bin\openvpn.exe`} {
 		p := platform.ExpandEnv(c)
@@ -92,7 +92,51 @@ func findOpenVPN(explicit string) (string, error) {
 			return p, nil
 		}
 	}
-	return "", i18n.Error("openvpn.exe not found; install OpenVPN Community (https://openvpn.net/community-downloads/) or use -openvpn <path>")
+	return "", ErrOpenVPNMissing
+}
+
+func openVPNMissing() error {
+	if runtime.GOOS == "windows" {
+		return i18n.Sentinel("openvpn.exe not found; install OpenVPN Community (https://openvpn.net/community-downloads/) or use -openvpn <path>")
+	}
+	return i18n.Sentinel("openvpn not found; install the openvpn package (e.g. sudo apt install openvpn) or use -openvpn <path>")
+}
+
+// installFailed: the automatic installation failed. It counts as
+// ErrOpenVPNMissing, so callers do not retry and ask the user again.
+type installFailed struct{ err error }
+
+func (e installFailed) Error() string {
+	return i18n.T("could not install OpenVPN automatically: {0}", e.err)
+}
+func (e installFailed) Is(target error) bool { return target == ErrOpenVPNMissing }
+
+// locateOpenVPN finds openvpn, offering to install it when it is missing.
+func locateOpenVPN(o Options) (string, error) {
+	exe, err := findOpenVPN(o.OpenVPNPath)
+	if !errors.Is(err, ErrOpenVPNMissing) || o.InstallOpenVPN == nil {
+		return exe, err
+	}
+	progress := o.Progress
+	if progress == nil {
+		progress = func(string) {}
+	}
+	if ierr := o.InstallOpenVPN(func(s string) {
+		log.Print(s)
+		progress(s)
+	}); ierr != nil {
+		if errors.Is(ierr, ErrOpenVPNMissing) {
+			return "", ierr
+		}
+		return "", installFailed{ierr}
+	}
+	progress("")
+	exe, err = findOpenVPN(o.OpenVPNPath)
+	if err != nil {
+		return "", installFailed{err}
+	}
+	log.Printf("OpenVPN installed: %s", exe)
+	return exe, nil
 }
 
 // sanitizeOVPN removes from the .ovpn everything that would change the system
@@ -170,10 +214,6 @@ func parsePushReply(line string) (ip net.IP, dns []netip.Addr) {
 }
 
 func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
-	exe, err := findOpenVPN(o.OpenVPNPath)
-	if err != nil {
-		return nil, err
-	}
 	// Linux, graphical interface without root: openvpn starts via pkexec (the
 	// system asks for the administrator password, like UAC on Windows)
 	// through "vpn_specify openvpn-helper" (see RunOpenVPNHelper).
@@ -183,6 +223,10 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 			return nil, ErrNeedsAdmin
 		}
 		return nil, i18n.Error("OpenVPN mode needs a terminal running as Administrator (OpenVPN creates a network adapter). WireGuard mode does not")
+	}
+	exe, err := locateOpenVPN(o)
+	if err != nil {
+		return nil, err
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {

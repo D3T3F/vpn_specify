@@ -130,6 +130,8 @@ vpn_specify-setup.exe /silent [/dir=D:\Apps] [/nodesktop] [/nostartmenu] [/lang=
 | **WireGuard** (`.conf`) | يعمل النفق بالكامل داخل العملية (wireguard-go + مكدس TCP/IP من gVisor). لا يُنشأ أي محول شبكة. | لا |
 | **OpenVPN** (`.ovpn`) | يستخدم `openvpn` المثبت، لكنه يمنع كل ما قد يغيّر توجيه النظام أو DNS الخاص به (redirect-gateway والمسارات وDNS وblock-outside-dns). يربط الوكيل مقابسه بالنفق، وهذا ما يمرر حركة البيانات عبر الـ VPN. | نعم (ينشئ OpenVPN محولًا) |
 
+إذا لم يكن OpenVPN موجودًا، يعرض vpn_specify تثبيته عند الاتصال: على Windows ينزّل المثبّت الرسمي (يتم التحقق منه بقيمة SHA-256 ثابتة) ويثبّته بصمت، بدون واجهة OpenVPN؛ وعلى Linux يثبّت حزمة `openvpn` من التوزيعة (apt أو dnf أو yum أو zypper أو pacman أو apk). يمكنك أيضًا تثبيته بنفسك.
+
 ## الاستخدام
 
 </div>

@@ -120,6 +120,8 @@ use the same local ports (10799–10801).
 | **WireGuard** (`.conf`) | The tunnel runs entirely inside the process (wireguard-go + gVisor TCP/IP stack). No network adapter is created. | No |
 | **OpenVPN** (`.ovpn`) | Runs the installed `openvpn`, but blocks everything that would change the system routing or DNS (redirect-gateway, routes, DNS, block-outside-dns). The proxy binds its sockets to the tunnel, which is what sends the traffic through the VPN. | Yes (OpenVPN creates an adapter) |
 
+If OpenVPN is missing, vpn_specify offers to install it when you connect: on Windows it downloads the official installer (checked against a pinned SHA-256) and installs it silently, without the OpenVPN GUI; on Linux it installs the distribution's `openvpn` package (apt, dnf, yum, zypper, pacman or apk). You can also install it yourself.
+
 ## Usage
 
 ```powershell
@@ -473,6 +475,7 @@ run `.\scripts\build.ps1 -Icon`.
 cmd/vpn_specify/        entry point: GUI, up/run/status/update, autostart and uninstall
 cmd/installer/          installer (vpn_specify-setup.exe)
 internal/
+  ovpninstall/          installs OpenVPN when it is missing (Windows MSI, Linux packages)
   tunnel/               VPN connection: WireGuard (in process), OpenVPN, DNS
   proxy/                local SOCKS5 (TCP/UDP) and HTTP proxies, -L forwarding
   capture/              per-process capture with WinDivert (TCP and UDP)

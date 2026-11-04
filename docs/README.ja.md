@@ -125,6 +125,8 @@ vpn_specify-setup.exe /silent [/dir=D:\Apps] [/nodesktop] [/nostartmenu] [/lang=
 | **WireGuard**（`.conf`） | トンネルはプロセス内で完結します（wireguard-go + gVisor の TCP/IP スタック）。ネットワークアダプターは作成しません。 | いいえ |
 | **OpenVPN**（`.ovpn`） | インストール済みの `openvpn` を使いますが、システムのルーティングや DNS を変更するもの（redirect-gateway、ルート、DNS、block-outside-dns）はすべてブロックします。プロキシが自分のソケットをトンネルにバインドすることで、通信が VPN を通ります。 | はい（OpenVPN がアダプターを作成） |
 
+OpenVPN がない場合、vpn_specify は接続時にインストールを提案します。Windows では公式インストーラーをダウンロードし(固定の SHA-256 で検証)、OpenVPN の GUI なしでサイレントインストールします。Linux ではディストリビューションの `openvpn` パッケージ(apt、dnf、yum、zypper、pacman、apk)をインストールします。自分でインストールすることもできます。
+
 ## 使い方
 
 ```powershell

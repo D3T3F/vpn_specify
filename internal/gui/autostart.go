@@ -82,7 +82,7 @@ func runAutostart(st *store.Store, launch func(store.AppEntry) error, report fun
 // refused, missing credentials, missing program or app) are not repeated, so
 // the password is not asked several times in a row.
 func retryable(err error) bool {
-	for _, e := range []error{tunnel.ErrAdminDenied, tunnel.ErrNeedsCredentials, tunnel.ErrNeedsAdmin,
+	for _, e := range []error{tunnel.ErrAdminDenied, tunnel.ErrNeedsCredentials, tunnel.ErrNeedsAdmin, tunnel.ErrOpenVPNMissing,
 		store.ErrAppNotFound, os.ErrNotExist, exec.ErrNotFound} {
 		if errors.Is(err, e) {
 			return false

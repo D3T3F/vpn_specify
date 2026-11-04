@@ -43,7 +43,7 @@ func prepareAt(archive, ver string, relaunch bool, exe string) (*Plan, error) {
 	if err := replaceFile(fresh, exe); err != nil {
 		return nil, err
 	}
-	return &Plan{Description: "atualizado em " + exe, Run: func() error {
+	return &Plan{Description: i18n.T("updated in {0}", exe), Run: func() error {
 		if !relaunch {
 			return nil
 		}

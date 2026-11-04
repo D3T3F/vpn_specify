@@ -64,7 +64,7 @@ code { background: var(--chip); padding: 1px 5px; border-radius: 4px; font-size:
     <label class="check"><input type="checkbox" id="desktop" checked> <span data-i18n>Create a desktop shortcut</span></label>
     <label class="check"><input type="checkbox" id="startMenu" checked> <span data-i18n>Create a Start menu shortcut (shows up in Windows search)</span></label>
   </div>
-  <p class="hint" data-i18n>Nothing is downloaded from the internet: all files are already in the installer. To connect to OpenVPN VPNs (.ovpn) OpenVPN must be installed; WireGuard (.conf) works without anything extra.</p>
+  <p class="hint" data-i18n>The installer downloads nothing: all files are already inside it. OpenVPN VPNs (.ovpn) need OpenVPN: if it is missing, vpn_specify offers to install it when you connect. WireGuard (.conf) needs nothing extra.</p>
   <p class="hint"><span data-i18n>vpn_specify is free software, distributed under the MIT license.</span>
     <a href="#" onclick="toggleLicense(); return false" data-i18n>See license</a></p>
   <pre id="license" class="license hidden"></pre>
