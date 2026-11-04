@@ -327,6 +327,40 @@ Unterschiede zu Windows:
 - **Apps, die Proxys ignorieren**: ohne `-capture` `-L` für feste Adressen
   verwenden.
 
+## Android
+
+Installieren Sie `vpn_specify-<Version>-android-arm64.apk` (Android 8 oder neuer;
+erlauben Sie bei Nachfrage die Installation aus dieser Quelle). Android hat VPN pro
+App eingebaut, daher nutzt die App keinen Proxy: Der gesamte TCP- und UDP-Verkehr
+der gewählten Apps, auch Sprache, läuft durch den Tunnel, ohne Root. Der Rest des
+Telefons bleibt in Ihrem normalen Netzwerk.
+
+1. **Datei importieren…**: Wählen Sie eine WireGuard-`.conf`.
+2. **Apps auswählen…**: Markieren Sie die Apps, die das VPN nutzen, zum Beispiel Discord.
+3. **Verbinden**, und bestätigen Sie beim ersten Mal die VPN-Berechtigung von Android.
+
+Android kann nicht erkennen, wann eine App geöffnet wird. Daher gibt es zwei Wege,
+wie eine App das VPN nutzt:
+
+- **VPN eingeschaltet lassen** (empfohlen): Die App ist immer im VPN, egal wie sie
+  geöffnet wird, und sonst nichts. **Beim Start des Telefons verbinden** erledigt das
+  bei jedem Start. In den VPN-Einstellungen des Systems sorgt **Durchgehend aktives
+  VPN** für den automatischen Neustart durch Android, und **Verbindungen ohne VPN
+  blockieren** verhindert, dass die gewählten Apps außerhalb davon kommunizieren
+  (das blockiert auch den Rest des Telefons).
+- **Verknüpfung**: Erstellt ein Symbol „Discord (VPN)“ auf dem Startbildschirm, das
+  verbindet und dann die App öffnet. Das normale Symbol schaltet das VPN nicht ein.
+
+Einschränkungen unter Android:
+
+- Nur WireGuard: OpenVPN (`.ovpn`) wird noch nicht unterstützt.
+- Android hält nur ein VPN aktiv: Ein anderes zu starten schaltet dieses aus.
+- Wenn Sie Apps oder VPN während der Verbindung ändern, wird der Tunnel neu
+  erstellt, was die gewählten Apps kurz unterbricht.
+
+Die Sprache folgt dem System und lässt sich unter **Einstellungen** ändern. Die App
+sucht auf GitHub nach neuen Versionen, und Android fragt bei jedem Update nach.
+
 ## Updates
 
 Beim Öffnen der Oberfläche prüft vpn_specify die neueste Version in den

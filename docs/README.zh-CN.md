@@ -283,6 +283,27 @@ vpn_specify status
   因此它们的配置文件放在 `~/snap/<app>/common/vpn_specify/profiles/`。
 - **忽略代理的应用**：没有 `-capture` 时，请用 `-L` 转发固定地址。
 
+## Android
+
+安装 `vpn_specify-<版本>-android-arm64.apk`(Android 8 或更高版本;出现提示时允许从此来源安装)。Android 内置按应用 VPN,因此应用不使用代理:所选应用的全部 TCP 和 UDP 流量(包括语音)都经过隧道,无需 root。手机的其余部分仍在您的普通网络上。
+
+1. **导入文件…**:选择 WireGuard `.conf`。
+2. **选择应用…**:勾选使用 VPN 的应用,例如 Discord。
+3. **连接**,并在首次时接受 Android 的 VPN 权限。
+
+Android 无法察觉应用何时被打开,因此有两种方式让应用使用 VPN:
+
+- **保持 VPN 开启**(推荐):无论如何打开,该应用都始终在 VPN 中,其他内容都不在。**手机启动时连接**会在每次启动时执行此操作。在系统 VPN 设置中,**始终开启的 VPN** 让 Android 自动重新启动它,**屏蔽未使用 VPN 的所有连接**可阻止所选应用绕过它联网(也会阻止手机的其余部分)。
+- **快捷方式**:在主屏幕上创建“Discord (VPN)”图标,它会先连接再打开应用。普通图标不会开启 VPN。
+
+Android 上的限制:
+
+- 仅支持 WireGuard:暂不支持 OpenVPN(`.ovpn`)。
+- Android 同一时间只保持一个 VPN:启动另一个会关闭此 VPN。
+- 连接期间更改应用或 VPN 会重建隧道,所选应用会短暂中断。
+
+语言跟随系统,可在**设置**中更改。应用会在 GitHub 上查找新版本,每次更新 Android 都会要求确认。
+
 ## 更新
 
 打开界面时，vpn_specify 会在 [GitHub releases](https://github.com/D3T3F/vpn_specify/releases)

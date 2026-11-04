@@ -310,6 +310,39 @@ Diferenças em relação ao Windows:
   `~/snap/<app>/common/vpn_specify/profiles/`.
 - **Apps que ignoram proxy**: sem `-capture`, use `-L` para endereços fixos.
 
+## Android
+
+Instale o `vpn_specify-<versão>-android-arm64.apk` (Android 8 ou superior;
+permita a instalação dessa origem quando pedir). O Android tem VPN por aplicativo
+nativa, então o app não usa proxy: todo o tráfego TCP e UDP dos apps escolhidos,
+incluindo voz, passa pelo túnel, sem precisar de root. O resto do celular fica na
+sua rede normal.
+
+1. **Importar arquivo…**: escolha um `.conf` do WireGuard.
+2. **Escolher apps…**: marque os apps que usam a VPN, o Discord por exemplo.
+3. **Conectar**, e aceite a permissão de VPN do Android na primeira vez.
+
+O Android não consegue perceber quando um app é aberto, então há duas formas de
+um app usar a VPN:
+
+- **Deixar a VPN ligada** (recomendado): o app fica sempre na VPN, seja como for
+  aberto, e nada mais fica. **Conectar quando o celular ligar** faz isso a cada
+  início. Nas configurações de VPN do sistema, **VPN sempre ativa** faz o Android
+  religá-la sozinho, e **Bloquear conexões sem VPN** impede que os apps escolhidos
+  saiam por fora dela (também bloqueia o resto do celular).
+- **Atalho**: cria um ícone "Discord (VPN)" na tela inicial, que conecta e depois
+  abre o app. Abrir pelo ícone normal não liga a VPN.
+
+Limitações no Android:
+
+- Só WireGuard: OpenVPN (`.ovpn`) ainda não é suportado.
+- O Android mantém uma VPN ativa por vez: iniciar outra desliga esta.
+- Mudar os apps ou a VPN com a conexão ativa recria o túnel, o que interrompe os
+  apps escolhidos por um instante.
+
+O idioma segue o do sistema e pode ser trocado em **Configurações**. O app procura
+novas versões no GitHub, e o Android pede confirmação a cada atualização.
+
 ## Atualizações
 
 Ao abrir a interface, o vpn_specify consulta a última versão nas

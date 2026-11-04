@@ -329,6 +329,41 @@ Différences avec Windows :
 - **Apps qui ignorent le proxy** : sans `-capture`, utilisez `-L` pour des
   adresses fixes.
 
+## Android
+
+Installez `vpn_specify-<version>-android-arm64.apk` (Android 8 ou plus récent ;
+autorisez l'installation depuis cette source si demandé). Android intègre le VPN
+par application : l'app n'utilise donc pas de proxy. Tout le trafic TCP et UDP des
+applications choisies, voix comprise, passe par le tunnel, sans root. Le reste du
+téléphone reste sur votre réseau normal.
+
+1. **Importer un fichier…** : choisissez un `.conf` WireGuard.
+2. **Choisir les applications…** : cochez celles qui utilisent le VPN, Discord par exemple.
+3. **Connecter**, et acceptez l'autorisation VPN d'Android la première fois.
+
+Android ne peut pas détecter l'ouverture d'une application ; il y a donc deux façons
+de faire utiliser le VPN à une application :
+
+- **Laisser le VPN activé** (recommandé) : l'application est toujours dans le VPN,
+  quelle que soit la façon de l'ouvrir, et rien d'autre ne l'est. **Se connecter au
+  démarrage du téléphone** le fait à chaque démarrage. Dans les paramètres VPN du
+  système, **VPN permanent** le fait redémarrer par Android, et **Bloquer les
+  connexions sans VPN** empêche les applications choisies de sortir en dehors (cela
+  bloque aussi le reste du téléphone).
+- **Raccourci** : crée une icône « Discord (VPN) » sur l'écran d'accueil, qui connecte
+  puis ouvre l'application. L'icône normale n'active pas le VPN.
+
+Limites sur Android :
+
+- WireGuard uniquement : OpenVPN (`.ovpn`) n'est pas encore pris en charge.
+- Android ne garde qu'un seul VPN actif : en lancer un autre désactive celui-ci.
+- Changer les applications ou le VPN pendant la connexion recrée le tunnel, ce qui
+  interrompt un instant les applications choisies.
+
+La langue suit celle du système et peut être changée dans **Paramètres**. L'app
+cherche les nouvelles versions sur GitHub, et Android demande de confirmer chaque
+mise à jour.
+
 ## Mises à jour
 
 À l’ouverture de l’interface, vpn_specify vérifie la dernière version dans

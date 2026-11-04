@@ -309,6 +309,39 @@ Differences from Windows:
 - **Apps that ignore proxies**: without `-capture`, use `-L` for fixed
   addresses.
 
+## Android
+
+Install `vpn_specify-<version>-android-arm64.apk` (Android 8 or newer; allow
+installing from this source when asked). Android has per-app VPN built in, so
+the app does not use a proxy: all the TCP and UDP traffic of the chosen apps,
+voice included, goes through the tunnel, and needs no root. The rest of the
+phone stays on your normal network.
+
+1. **Import file…**: choose a WireGuard `.conf`.
+2. **Choose apps…**: mark the apps that use the VPN, Discord for example.
+3. **Connect**, and accept Android's VPN permission the first time.
+
+Android cannot notice an app being opened, so there are two ways to have an
+app use the VPN:
+
+- **Leave the VPN on** (recommended): the app is always in the VPN, however it
+  is opened, and nothing else is. **Connect when the phone starts** does this at
+  every start. In the system's VPN settings, **Always-on VPN** makes Android
+  restart it by itself, and **Block connections without VPN** stops the chosen
+  apps from leaving outside it (it also blocks the rest of the phone).
+- **Shortcut**: creates a "Discord (VPN)" icon on the home screen, which connects
+  and then opens the app. Opening the normal icon does not start the VPN.
+
+Limitations on Android:
+
+- WireGuard only: OpenVPN (`.ovpn`) is not supported yet.
+- Android keeps one VPN active at a time: starting another one turns this one off.
+- Changing the apps or the VPN while connected recreates the tunnel, which
+  interrupts the chosen apps for a moment.
+
+The language follows the system and can be changed in **Settings**. The app
+looks for new versions on GitHub, and Android asks you to confirm each update.
+
 ## Updates
 
 When the interface opens, vpn_specify checks the latest version in the
@@ -454,15 +487,29 @@ Their source is in `assets\` (`icon-source.png`, `vpn_specify.ico` and the
 `resource.rc.tmpl` template). To change the icon, regenerate the `.ico` and
 run `.\scripts\build.ps1 -Icon`.
 
+### Building the Android app
+
+Needs Go, the Android SDK with NDK 27.1 (Android Studio installs them) and JDK 17
+or newer. `.\scripts\build.ps1 -Android` writes
+`dist\vpn_specify-<version>-android-arm64.apk`.
+
+To publish it, sign with your own key: follow `android/keystore.properties.example`
+once. Without `android/keystore.properties` the APK is signed with the debug key,
+which is only for testing. **Keep the keystore and its password backed up**:
+Android refuses an update signed with another key.
+
+To run on an x86_64 emulator: `cd android; .\gradlew assembleDebug -Pabis=x86_64`.
+
 ### Publishing a version
 
-1. Change `VERSION` (e.g. `1.1.0`) and run `.\scripts\build.ps1 -Test -Icon -Dist -Linux`.
+1. Change `VERSION` (e.g. `1.1.0`) and run `.\scripts\build.ps1 -Test -Icon -Dist -Linux -Android`.
 2. Create the release with the tag **`v1.1.0`** (not marked as pre-release)
    and attach the files from `dist\` **with these names**, which the updater
    looks for:
    - `vpn_specify-1.1.0-win64.zip`
    - `vpn_specify-1.1.0-linux-amd64.tar.gz`
    - `vpn_specify-1.1.0-linux-arm64.tar.gz`
+   - `vpn_specify-1.1.0-android-arm64.apk`
 
    A system without a package in the release simply gets no notice. That is
    why `v1.0.0`, which only has the Windows package, does not show up for
@@ -474,7 +521,10 @@ run `.\scripts\build.ps1 -Icon`.
 ```
 cmd/vpn_specify/        entry point: GUI, up/run/status/update, autostart and uninstall
 cmd/installer/          installer (vpn_specify-setup.exe)
+cmd/libvpn_specify/     the Go library of the Android app (one JNI function)
+android/                the Android app (Kotlin): VpnService, interface, updater
 internal/
+  mobile/               what the Android app calls in Go, as JSON
   ovpninstall/          installs OpenVPN when it is missing (Windows MSI, Linux packages)
   tunnel/               VPN connection: WireGuard (in process), OpenVPN, DNS
   proxy/                local SOCKS5 (TCP/UDP) and HTTP proxies, -L forwarding

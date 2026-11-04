@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">#5B8CFF</item>
+        <item name="android:colorAccent">#5B8CFF</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <style name="LaunchTheme" parent="android:Theme.Material.Dialog.NoActionBar">
+        <item name="android:colorAccent">#5B8CFF</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+    </style>
+</resources>

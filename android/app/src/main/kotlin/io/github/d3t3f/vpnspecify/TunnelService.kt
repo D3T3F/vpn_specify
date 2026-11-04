@@ -1,0 +1,336 @@
+package io.github.d3t3f.vpnspecify
+
+import android.app.Notification
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.VpnService
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import java.util.concurrent.Executors
+
+/**
+ * The VPN. Android does what the desktop versions need a proxy for: only the
+ * apps passed to addAllowedApplication use the tunnel, with all their TCP and
+ * UDP, and this app's own WireGuard socket stays outside it.
+ */
+class TunnelService : VpnService() {
+    // Starts and stops. While connected, monitor() keeps this thread busy.
+    private val worker = Executors.newSingleThreadExecutor()
+    // Network changes: they must not wait for the worker, which only frees up
+    // when the tunnel goes down.
+    private val networkWorker = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
+    private val store by lazy { Store.of(this) }
+
+    // Each start or stop gets a new number; older work sees it and gives up.
+    @Volatile private var generation = 0
+    private var network: ConnectivityManager.NetworkCallback? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // No intent: the system restarted the service. An always-on start has
+        // the VpnService action. Neither is a user turning the VPN on from here.
+        if (intent?.action == ACTION_STOP) {
+            store.wantOn = false
+            shutdown()
+            return START_NOT_STICKY
+        }
+        if (intent == null && !store.wantOn) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!enterForeground()) {
+            VpnState.set(VpnState.Phase.ERROR, T("VPN permission is missing. Open the app and connect once."), tunUp = false)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        store.wantOn = true
+        val g = ++generation
+        worker.execute { run(g) }
+        return START_STICKY
+    }
+
+    private fun run(g: Int) {
+        val config = store.active
+        runCatching { Native.stop() }
+        val text = try {
+            if (config == null) throw Native.GoError(T("Import a VPN first."))
+            store.read(config)
+        } catch (e: Exception) {
+            return fail(g, e.message ?: e.toString())
+        }
+
+        VpnState.set(VpnState.Phase.CONNECTING, T("Connecting…"), config = config, tunUp = false, apps = emptySet())
+        updateNotification()
+
+        try {
+            val plan = Native.plan(text)
+            // The server name resolves through the normal network, which may
+            // not exist yet (right after the phone starts, for example).
+            while (true) {
+                if (g != generation) return
+                try {
+                    Native.resolve(text)
+                    break
+                } catch (e: Native.GoError) {
+                    VpnState.set(VpnState.Phase.CONNECTING, T("Waiting for the network…"))
+                    Thread.sleep(3000)
+                }
+            }
+            if (g != generation) return
+
+            val b = Builder().setSession(config!!).setMtu(plan.mtu).setBlocking(true)
+            for (a in plan.addresses) {
+                val (ip, bits) = a.split("/")
+                b.addAddress(ip, bits.toInt())
+            }
+            for (r in plan.routes) {
+                val (ip, bits) = r.split("/")
+                b.addRoute(ip, bits.toInt())
+            }
+            plan.dns.forEach { b.addDnsServer(it) }
+            if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
+
+            // Never establish with an empty list: for Android that means every
+            // app on the phone, the opposite of what this app promises.
+            val used = mutableSetOf<String>()
+            for (pkg in store.apps) {
+                if (pkg == packageName) continue
+                try {
+                    b.addAllowedApplication(pkg)
+                    used += pkg
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.i(TAG, "skipping $pkg: not installed")
+                }
+            }
+            if (used.isEmpty()) return fail(g, T("Choose at least one app first."))
+
+            val pfd = b.establish() ?: return fail(g, T("VPN permission is missing. Open the app and connect once."))
+            if (g != generation) {
+                pfd.close()
+                return
+            }
+            Native.start(pfd.detachFd(), text)
+            VpnState.set(VpnState.Phase.CONNECTING, T("Waiting for the server…"), tunUp = true, apps = used)
+            watchNetwork()
+            monitor(g, System.currentTimeMillis())
+        } catch (e: InterruptedException) {
+            return
+        } catch (e: Exception) {
+            Log.w(TAG, "start failed", e)
+            fail(g, e.message ?: e.toString())
+        }
+    }
+
+    /** Follows the handshake and the counters until a newer start or stop. */
+    private fun monitor(g: Int, started: Long) {
+        var lastKick = started
+        var shown: VpnState.Phase? = null
+        // The peer answers data within seconds, so data going out with nothing
+        // coming back means the connection is gone, whatever the last handshake.
+        var lastRx = 0L
+        var lastRxAt = started
+        var txAtLastRx = 0L
+        while (g == generation) {
+            try {
+                val st = Native.stats()
+                VpnState.stats = st
+                val now = System.currentTimeMillis()
+                if (st.rx != lastRx) {
+                    lastRx = st.rx
+                    lastRxAt = now
+                    txAtLastRx = st.tx
+                }
+                val silent = st.tx > txAtLastRx && now - lastRxAt > SILENT_MS
+                if (st.lastHandshake > 0 && !silent) {
+                    if (VpnState.phase != VpnState.Phase.CONNECTED) VpnState.set(VpnState.Phase.CONNECTED)
+                    else VpnState.notifyListeners()
+                } else {
+                    if (now - lastKick > KICK_MS) {
+                        lastKick = now
+                        Native.kick()
+                    }
+                    if (silent || now - started > NO_ANSWER_MS) {
+                        VpnState.set(VpnState.Phase.CONNECTING, T("No answer from the server yet. Check the configuration and the network."))
+                    }
+                }
+                if (VpnState.phase != shown) {
+                    shown = VpnState.phase
+                    updateNotification()
+                }
+                Thread.sleep(1000)
+            } catch (e: InterruptedException) {
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "monitor", e)
+                return
+            }
+        }
+    }
+
+    private fun fail(g: Int, message: String) {
+        if (g != generation) return
+        generation++
+        store.wantOn = false
+        runCatching { Native.stop() }
+        VpnState.set(VpnState.Phase.ERROR, message, tunUp = false, apps = emptySet())
+        main.post { leave() }
+    }
+
+    private fun shutdown() {
+        generation++
+        worker.execute {
+            runCatching { Native.stop() }
+            VpnState.set(VpnState.Phase.OFF, tunUp = false, apps = emptySet(), config = null)
+        }
+        main.post { leave() }
+    }
+
+    private fun leave() {
+        stopWatchingNetwork()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    /**
+     * Sockets opened on the old network do not move by themselves. This cannot
+     * use registerDefaultNetworkCallback: for the app that created a VPN, that
+     * reports the VPN itself, so Wi-Fi and mobile data changes would go unseen.
+     * Any change is enough reason to rebind, and doing it needlessly is harmless;
+     * the delay turns the burst of events of one change into one rebind.
+     */
+    private fun watchNetwork() {
+        main.post {
+            if (network != null) return@post
+            val validated = HashMap<Network, Boolean>()
+            val registered = System.currentTimeMillis()
+            val rebind = Runnable {
+                networkWorker.execute {
+                    val r = runCatching { Native.rebind() }
+                    Log.i(TAG, "rebind: ${r.exceptionOrNull() ?: "ok"}")
+                }
+            }
+            fun changed(why: String, n: Network) {
+                // Registering reports the networks that already exist.
+                if (System.currentTimeMillis() - registered < SETTLE_MS) return
+                Log.i(TAG, "network $n: $why")
+                main.removeCallbacks(rebind)
+                main.postDelayed(rebind, REBIND_DELAY_MS)
+            }
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(n: Network) = changed("available", n)
+                override fun onLost(n: Network) {
+                    validated.remove(n)
+                    changed("lost", n)
+                }
+                override fun onLinkPropertiesChanged(n: Network, lp: LinkProperties) = changed("addresses", n)
+                // A network usually becomes the default only after being validated.
+                override fun onCapabilitiesChanged(n: Network, caps: NetworkCapabilities) {
+                    val v = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    if (validated.put(n, v) != v) changed("validated=$v", n)
+                }
+            }
+            network = cb
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                .build()
+            // Callbacks arrive on the main thread, like the rest of this code.
+            getSystemService(ConnectivityManager::class.java).registerNetworkCallback(request, cb, main)
+        }
+    }
+
+    private fun stopWatchingNetwork() {
+        network?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
+        network = null
+    }
+
+    private fun notification(): Notification {
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, TunnelService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val text = when (VpnState.phase) {
+            VpnState.Phase.CONNECTED -> T("Connected: {0}", VpnState.config ?: "")
+            else -> T("Connecting…")
+        }
+        return Notification.Builder(this, App.CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(text)
+            .setContentIntent(open)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(null, T("Disconnect"), stop).build())
+            .build()
+    }
+
+    private fun updateNotification() {
+        main.post {
+            if (generation == 0) return@post
+            getSystemService(android.app.NotificationManager::class.java).notify(NOTIFICATION, notification())
+        }
+    }
+
+    private fun enterForeground(): Boolean = try {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+        } else {
+            startForeground(NOTIFICATION, notification())
+        }
+        true
+    } catch (e: Exception) {
+        // Android 14+ only lets a prepared VPN app use this foreground type.
+        Log.w(TAG, "startForeground", e)
+        false
+    }
+
+    /** Another VPN app took over, or the user removed the permission. */
+    override fun onRevoke() {
+        store.wantOn = false
+        generation++
+        worker.execute { runCatching { Native.stop() } }
+        VpnState.set(VpnState.Phase.ERROR, T("Android turned this VPN off: another VPN was started, or the permission was removed."), tunUp = false, apps = emptySet())
+        main.post { leave() }
+    }
+
+    override fun onDestroy() {
+        generation++
+        stopWatchingNetwork()
+        worker.execute { runCatching { Native.stop() } }
+        worker.shutdown()
+        networkWorker.shutdown()
+        if (VpnState.phase != VpnState.Phase.ERROR) VpnState.set(VpnState.Phase.OFF, tunUp = false, apps = emptySet(), config = null)
+        super.onDestroy()
+    }
+
+    companion object {
+        private const val TAG = "vpn_specify"
+        private const val NOTIFICATION = 1
+        private const val ACTION_STOP = "io.github.d3t3f.vpnspecify.STOP"
+        private const val KICK_MS = 10_000L
+        private const val NO_ANSWER_MS = 20_000L
+        private const val SILENT_MS = 30_000L
+        private const val SETTLE_MS = 1500L
+        private const val REBIND_DELAY_MS = 1000L
+
+        /** The caller makes sure VpnService.prepare() returned null. */
+        fun start(ctx: Context) {
+            ctx.startForegroundService(Intent(ctx, TunnelService::class.java))
+        }
+
+        fun stop(ctx: Context) {
+            ctx.startService(Intent(ctx, TunnelService::class.java).setAction(ACTION_STOP))
+        }
+    }
+}

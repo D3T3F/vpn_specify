@@ -29,14 +29,20 @@
   dist\vpn_specify-<version>-linux-<arch>.tar.gz, with the vpn_specify
   executable, LICENSE and licenses\.
 
+.PARAMETER Android
+  Also builds dist\vpn_specify-<version>-android-arm64.apk. Needs the Android
+  SDK and NDK. Signed with android\keystore.properties if it exists; otherwise
+  with the debug key, which is only for testing.
+
 .EXAMPLE
-  .\scripts\build.ps1 -Test -Dist -Linux
+  .\scripts\build.ps1 -Test -Dist -Linux -Android
 #>
 param(
     [switch]$Test,
     [switch]$Icon,
     [switch]$Dist,
-    [switch]$Linux
+    [switch]$Linux,
+    [switch]$Android
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -142,6 +148,29 @@ try {
             }
         } finally {
             $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = $saved
+        }
+    }
+
+    if ($Android) {
+        $savedJava, $savedSdk = $env:JAVA_HOME, $env:ANDROID_HOME
+        try {
+            # Gradle needs a JDK it supports: the one in Android Studio is one
+            $studioJdk = Join-Path $env:ProgramFiles 'Android\Android Studio\jbr'
+            if (-not $env:JAVA_HOME -and (Test-Path $studioJdk)) { $env:JAVA_HOME = $studioJdk }
+            if (-not $env:ANDROID_HOME) { $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
+            Push-Location android
+            try {
+                Invoke-Native '.\gradlew.bat' @('assembleRelease', '--console=plain')
+            } finally { Pop-Location }
+            New-Item -ItemType Directory -Force dist | Out-Null
+            $apk = Join-Path 'dist' "vpn_specify-$version-android-arm64.apk"
+            Copy-Item 'android\app\build\outputs\apk\release\app-release.apk' $apk -Force
+            Write-Host "Android: $((Resolve-Path $apk).Path) ($([math]::Round((Get-Item $apk).Length / 1MB, 1)) MB)" -ForegroundColor Green
+            if (-not (Test-Path 'android\keystore.properties')) {
+                Write-Warning 'Signed with the debug key: for testing only. To publish, see android\keystore.properties.example.'
+            }
+        } finally {
+            $env:JAVA_HOME, $env:ANDROID_HOME = $savedJava, $savedSdk
         }
     }
 

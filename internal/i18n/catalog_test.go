@@ -12,7 +12,7 @@ import (
 )
 
 // Sources scanned for messages (relative to this package).
-var sourceRoots = []string{"../../cmd", "../../internal"}
+var sourceRoots = []string{"../../cmd", "../../internal", "../../android/app/src/main/kotlin"}
 
 // goString matches a Go string literal: "interpreted" or `raw`.
 const goString = `"(?:[^"\\]|\\.)*"|` + "`[^`]*`"
@@ -20,6 +20,7 @@ const goString = `"(?:[^"\\]|\\.)*"|` + "`[^`]*`"
 var (
 	goCall   = regexp.MustCompile(`i18n\.(?:T|Error|N|Sentinel)\(\s*(` + goString + `)`)
 	goWrap   = regexp.MustCompile(`i18n\.Wrap\([^,]+,\s*(` + goString + `)`)
+	ktCall   = regexp.MustCompile(`\bT\(\s*("(?:[^"\\]|\\.)*")`)
 	jsCall   = regexp.MustCompile(`\bt\(\s*("(?:[^"\\]|\\.)*")`)
 	htmlText = regexp.MustCompile(`(?s)<(\w+)((?:[^>]*\s)?data-i18n(?:\s[^>]*)?)>(.*?)</(\w+)>`)
 	htmlAttr = regexp.MustCompile(`(?s)<\w+([^>]*\bdata-i18n-attr="([^"]+)"[^>]*)>`)
@@ -51,7 +52,8 @@ func messages(t *testing.T) map[string][]string {
 			}
 			isGo := strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go")
 			isHTML := strings.HasSuffix(p, ".html")
-			if !isGo && !isHTML {
+			isKotlin := strings.HasSuffix(p, ".kt")
+			if !isGo && !isHTML && !isKotlin {
 				return nil
 			}
 			b, err := os.ReadFile(p)
@@ -60,6 +62,16 @@ func messages(t *testing.T) map[string][]string {
 			}
 			src := string(b)
 			where := filepath.ToSlash(strings.TrimPrefix(p, "../../"))
+			if isKotlin {
+				for _, m := range ktCall.FindAllStringSubmatch(src, -1) {
+					s, err := strconv.Unquote(m[1])
+					if err != nil {
+						t.Errorf("%s: %v in %s", where, err, m[1])
+					}
+					add(s, where)
+				}
+				return nil
+			}
 			if isGo {
 				for _, re := range []*regexp.Regexp{goCall, goWrap} {
 					for _, m := range re.FindAllStringSubmatch(src, -1) {
