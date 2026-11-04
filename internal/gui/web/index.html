@@ -21,6 +21,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }  /* .row and .list set display, which would win over the attribute */
 html, body { margin: 0; background: var(--bg); color: var(--text);
   font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
 header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 5; }
@@ -83,7 +84,8 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .toast.error { border-left-color: var(--err); } .toast.ok { border-left-color: var(--ok); }
 .avatar img { width: 26px; height: 26px; object-fit: contain; }
 .item.pick { cursor: pointer; } .item.pick:hover { background: var(--chip); }
-#pickList { max-height: 52vh; overflow: auto; }
+#pickList, #gateList { max-height: 52vh; overflow: auto; }
+.badge.proto { color: var(--accent); text-transform: uppercase; }
 input[type=search] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; width: 100%; }
 .card.update { border-color: var(--accent); }
 .card.update .row { flex-wrap: wrap; }
@@ -140,7 +142,7 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
   </section>
 
   <section class="card">
-    <h2><span data-i18n>VPNs</span> <span class="spacer"></span><button class="small primary" onclick="importConfig()" data-i18n>Import file…</button></h2>
+    <h2><span data-i18n>VPNs</span> <span class="spacer"></span><button class="small" onclick="openGate()" data-i18n>Search VPN Gate…</button><button class="small primary" onclick="importConfig()" data-i18n>Import file…</button></h2>
     <div id="configs" class="list"></div>
     <p class="hint" data-i18n>The files (.ovpn / .conf) are copied into the vpn_specify data folder. Use “Edit” to rename or change the configuration.</p>
   </section>
@@ -220,6 +222,26 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
       <button type="button" onclick="pickFromFile()" data-i18n>Choose file…</button>
       <span class="spacer"></span>
       <button type="button" onclick="pickDlg.close()" data-i18n>Cancel</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="gateDlg" class="wide">
+  <form method="dialog" onsubmit="return false">
+    <h3 data-i18n>VPN Gate servers</h3>
+    <p class="hint" data-i18n>VPN Gate servers are run by volunteers. An operator can see traffic that is not encrypted, and servers may keep logs, so avoid them for banking and important accounts. Some may also be offline: if one does not connect, try another.</p>
+    <p class="hint" id="gateStatus"></p>
+    <div class="row" id="gateFilters" hidden>
+      <input type="search" id="gateQuery" data-i18n-attr="placeholder" placeholder="Search country…" oninput="renderGate()" autocomplete="off">
+      <select id="gateProto" style="flex: none; width: auto" onchange="renderGate()">
+        <option value="" data-i18n>All protocols</option>
+        <option value="tcp">TCP</option>
+        <option value="udp">UDP</option>
+      </select>
+    </div>
+    <div id="gateList" class="list" hidden></div>
+    <div class="buttons">
+      <button type="button" id="gateAgain" onclick="searchGate()" data-i18n>Search again</button>
+      <button type="button" onclick="gateDlg.close()" data-i18n>Close</button>
     </div>
   </form>
 </dialog>
@@ -495,6 +517,82 @@ function readConfigFile() {
     };
     f.click();
   });
+}
+// ---------- VPN Gate ----------
+let gateServers = [];
+let regionNames = null, regionNamesLang = "";
+function regionName(code, fallback) {
+  try {
+    if (!regionNames || regionNamesLang !== I18N_LANG) { // one formatter per language, not one per row
+      regionNames = new Intl.DisplayNames([I18N_LANG], { type: "region" });
+      regionNamesLang = I18N_LANG;
+    }
+    return regionNames.of(code) || fallback;
+  } catch (e) { return fallback; }
+}
+function openGate() {
+  gateDlg.showModal();
+  if (!gateServers.length) searchGate();
+}
+const foldText = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// The country is found by its name in the language of the page, its name in
+// English (as VPN Gate writes it) or its exact code ("br").
+function gateMatches(s, query, proto) {
+  if (proto && s.proto !== proto) return false;
+  if (!query) return true;
+  return foldText(s.country) === query
+    || [regionName(s.country, s.countryName), s.countryName].some(n => foldText(n).includes(query));
+}
+async function searchGate() {
+  $("gateAgain").disabled = true;
+  $("gateList").hidden = true;
+  $("gateFilters").hidden = true;
+  $("gateStatus").classList.remove("err");
+  $("gateStatus").textContent = t("Searching for servers…");
+  try {
+    const r = await vsVpnGateList();
+    gateServers = r.servers;
+    $("gateStatus").textContent = !gateServers.length ? t("VPN Gate has no server available right now.")
+      : r.near ? t("Closest to {0} first.", regionName(r.near, r.near))
+      : t("Your country was not detected: the best rated servers come first.");
+    renderGate();
+  } catch (e) {
+    gateServers = [];
+    $("gateStatus").classList.add("err");
+    $("gateStatus").textContent = String(e);
+  }
+  $("gateAgain").disabled = false;
+}
+function renderGate() {
+  const added = new Set(state.settings.configs.map(c => c.name));
+  const query = foldText($("gateQuery").value.trim()), proto = $("gateProto").value;
+  const shown = gateServers.filter(s => gateMatches(s, query, proto));
+  $("gateFilters").hidden = !gateServers.length;
+  $("gateList").hidden = !gateServers.length;
+  if (gateServers.length && !shown.length) {
+    $("gateList").innerHTML = `<div class="item"><div class="grow empty">${esc(t("No server matches this filter."))}</div></div>`;
+    return;
+  }
+  $("gateList").innerHTML = shown.map(s => `<div class="item">
+    <div class="avatar">${esc(s.country)}</div>
+    <div class="grow">
+      <div class="title">${esc(regionName(s.country, s.countryName))} · ${esc(s.host)}<span class="badge proto">${esc(s.proto)}</span></div>
+      <div class="sub">${esc(s.ip)} · ${esc(t("Port {0} · {1} Mbps · {2} sessions", s.port, (s.speed / 1e6).toFixed(1), s.sessions))}</div>
+    </div>
+    <button type="button" class="small" ${added.has(s.name) ? "disabled" : ""} data-id="${esc(s.id)}" onclick="addGate(this)">${esc(added.has(s.name) ? t("Added") : t("Add"))}</button>
+  </div>`).join("");
+}
+async function addGate(btn) {
+  btn.disabled = true;
+  try {
+    await vsVpnGateAdd(btn.dataset.id);
+    btn.textContent = t("Added");
+    refresh();
+  } catch (e) {
+    btn.disabled = false;
+    $("gateStatus").classList.add("err");
+    $("gateStatus").textContent = String(e);
+  }
 }
 let about = null;
 (async () => {

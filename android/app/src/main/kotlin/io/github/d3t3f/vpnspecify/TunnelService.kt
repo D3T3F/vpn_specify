@@ -255,7 +255,7 @@ class TunnelService : VpnService() {
         when (process.failure) {
             OpenVpnProcess.Failure.AUTH -> {
                 store.forgetPassword(config)
-                fail(g, T("The server refused the user or password."))
+                fail(g, T("The server refused the connection. Check the user and password; a public server may also be full or going offline, so try another one."))
             }
             OpenVpnProcess.Failure.KEY_PASSWORD ->
                 fail(g, T("This VPN's private key has a password, which Android does not support yet."))

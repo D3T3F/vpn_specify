@@ -23,6 +23,9 @@ func (a *agent) api() map[string]any {
 	for k, f := range a.upd.api() {
 		m[k] = f
 	}
+	for k, f := range newGateFinder(a.store).api() {
+		m[k] = f
+	}
 	return m
 }
 

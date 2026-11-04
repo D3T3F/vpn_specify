@@ -13,6 +13,7 @@ import (
 
 	"vpn_specify/internal/i18n"
 	"vpn_specify/internal/tunnel"
+	"vpn_specify/internal/vpngate"
 )
 
 // Request is what Kotlin sends. Not every field applies to every method.
@@ -21,11 +22,17 @@ type Request struct {
 	Config string `json:"config,omitempty"` // WireGuard configuration text
 	FD     int    `json:"fd,omitempty"`     // tun file descriptor; Start takes ownership
 	Text   string `json:"text,omitempty"`   // language code or locale name
+	// VPN Gate: the app downloads (see VpnGate.kt) and Go reads the answers
+	GateList string `json:"gateList,omitempty"`
+	GateHome string `json:"gateHome,omitempty"`
 }
 
 var (
 	mu  sync.Mutex
 	dev *tunnel.WireGuardDevice
+
+	gateMu   sync.Mutex
+	gateList *vpngate.List
 )
 
 func init() {
@@ -74,6 +81,21 @@ func dispatch(r Request) (any, error) {
 		return tunnel.PlanWireGuard([]byte(r.Config))
 	case "planOpenVPN":
 		return tunnel.PlanOpenVPN([]byte(r.Config))
+	case "vpnGateList":
+		l, err := vpngate.Build([]byte(r.GateList), []byte(r.GateHome), []string{r.Text})
+		if err != nil {
+			return nil, err
+		}
+		gateMu.Lock()
+		gateList = l
+		gateMu.Unlock()
+		return l, nil
+	case "vpnGateConfig":
+		gateMu.Lock()
+		l := gateList
+		gateMu.Unlock()
+		_, cfg, err := l.Config(r.Text)
+		return string(cfg), err
 	case "appendLog":
 		log.Print(r.Text)
 		return nil, nil

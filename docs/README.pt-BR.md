@@ -72,6 +72,8 @@ Abra `vpn_specify.exe`. O Windows pede permissão de Administrador.
    se quiser, na Área de Trabalho). Ele aparece na pesquisa do Windows ao lado
    do Discord original.
 
+**VPNs > Buscar no VPN Gate…** lista os servidores públicos do [VPN Gate](https://www.vpngate.net), um projeto acadêmico da Universidade de Tsukuba, com os mais próximos do seu país primeiro e o protocolo (TCP ou UDP) de cada um. **Adicionar** salva o servidor junto com os arquivos que você importou. A lista vem da API do VPN Gate, que hoje tem cerca de 100 servidores e um protocolo por servidor. Esses servidores são mantidos por voluntários, que podem ver o tráfego não criptografado, e alguns podem estar fora do ar; evite usá-los em bancos e contas importantes. A lista pode ser filtrada por país e por protocolo (TCP ou UDP).
+
 Ao abrir um atalho:
 
 - Se a VPN não está ligada, o UAC aparece uma vez. Uma janela mostra o
@@ -318,7 +320,7 @@ nativa, então o app não usa proxy: todo o tráfego TCP e UDP dos apps escolhid
 incluindo voz, passa pelo túnel, sem precisar de root. O resto do celular fica na
 sua rede normal.
 
-1. **Importar arquivo…**: escolha um `.conf` do WireGuard ou um `.ovpn` do OpenVPN.
+1. **Importar arquivo…**: escolha um `.conf` do WireGuard ou um `.ovpn` do OpenVPN. Você também pode usar **Buscar no VPN Gate…** para adicionar um servidor público.
 2. **Escolher apps…**: marque os apps que usam a VPN, o Discord por exemplo.
 3. **Conectar**, e aceite a permissão de VPN do Android na primeira vez.
 

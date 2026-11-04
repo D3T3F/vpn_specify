@@ -67,3 +67,35 @@ func TestLookupARealDNS(t *testing.T) {
 		t.Fatalf("lookupA: %v %v", ips, err)
 	}
 }
+
+// After openvpn reconnects by itself, new connections must use what the server
+// gave this time; the old address no longer exists.
+func TestAdoptAfterReconnection(t *testing.T) {
+	old := netip.MustParseAddr("10.0.0.1")
+	tun := &ovpnTunnel{
+		localIP: net.ParseIP("10.211.1.21"),
+		dns:     []netip.Addr{old},
+		cache:   map[string]dnsCacheEntry{"a.example": {}},
+	}
+	fresh := netip.MustParseAddr("10.0.0.2")
+	tun.adopt(net.ParseIP("127.0.0.1"), []netip.Addr{fresh}, nil)
+	ip, _, dns := tun.network()
+	if !ip.Equal(net.ParseIP("127.0.0.1")) || len(dns) != 1 || dns[0] != fresh {
+		t.Fatalf("ip %v, dns %v", ip, dns)
+	}
+	if a := tun.dialer("tcp").LocalAddr.(*net.TCPAddr); !a.IP.Equal(ip) {
+		t.Errorf("the dialer still uses %v", a.IP)
+	}
+	if len(tun.cache) != 0 {
+		t.Error("names resolved by the old connection must be forgotten")
+	}
+	// a reconnection without DNS keeps the current servers, and -dns always wins
+	tun.adopt(net.ParseIP("127.0.0.1"), nil, nil)
+	if _, _, dns := tun.network(); len(dns) != 1 || dns[0] != fresh {
+		t.Errorf("dns lost: %v", dns)
+	}
+	tun.adopt(net.ParseIP("127.0.0.1"), []netip.Addr{fresh}, []netip.Addr{old})
+	if _, _, dns := tun.network(); dns[0] != old {
+		t.Errorf("-dns must win: %v", dns)
+	}
+}

@@ -148,12 +148,23 @@ func (st *Store) ImportConfig(src string) (VPNConfig, error) {
 	if err != nil {
 		return VPNConfig{}, err
 	}
-	c, err := inspectConfig(data, strings.EqualFold(filepath.Ext(src), ".ovpn"))
+	name := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
+	return st.importData(name, data, strings.EqualFold(filepath.Ext(src), ".ovpn"))
+}
+
+// AddOpenVPN saves an OpenVPN configuration that did not come from a file,
+// next to the imported ones.
+func (st *Store) AddOpenVPN(name string, data []byte) (VPNConfig, error) {
+	return st.importData(name, data, true)
+}
+
+func (st *Store) importData(wanted string, data []byte, looksOVPN bool) (VPNConfig, error) {
+	c, err := inspectConfig(data, looksOVPN)
 	if err != nil {
 		return VPNConfig{}, err
 	}
 	ext := kindExt[c.Kind]
-	base := SafeName(strings.TrimSuffix(filepath.Base(src), filepath.Ext(src)), "_")
+	base := SafeName(wanted, "_")
 	if base == "" {
 		base = "vpn"
 	}

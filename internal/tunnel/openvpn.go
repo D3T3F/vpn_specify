@@ -51,16 +51,21 @@ var ovpnStripDirectives = map[string]bool{
 }
 
 type ovpnTunnel struct {
-	cmd     *exec.Cmd
+	cmd *exec.Cmd
+
+	// These change when openvpn reconnects by itself: the server may hand out
+	// another address, and sockets bound to the old one would all fail.
+	netMu   sync.RWMutex
 	localIP net.IP
 	ifName  string // tunnel interface; only used on Linux (SO_BINDTODEVICE)
 	dns     []netip.Addr
-	tmpDir  string
-	exited  chan struct{}
-	done    chan error
-	once    sync.Once
-	stopEv  func() // tells openvpn to exit (no-console mode)
-	helper  bool   // Linux without root: openvpn runs via pkexec + openvpn-helper
+
+	tmpDir string
+	exited chan struct{}
+	done   chan error
+	once   sync.Once
+	stopEv func() // tells openvpn to exit (no-console mode)
+	helper bool   // Linux without root: openvpn runs via pkexec + openvpn-helper
 
 	cacheMu sync.Mutex
 	cache   map[string]dnsCacheEntry
@@ -354,6 +359,9 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		mu        sync.Mutex
 		pushedIP  net.IP
 		pushedDNS []netip.Addr
+		doneIP    net.IP
+		doneDNS   []netip.Addr
+		started   bool // the first connection was fully set up
 		readyOnce sync.Once
 		ready     = make(chan struct{})
 		failed    = make(chan error, 1)
@@ -381,7 +389,14 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 			}
 		}
 		if strings.Contains(line, "Initialization Sequence Completed") {
+			mu.Lock()
+			doneIP, doneDNS, pushedDNS = pushedIP, pushedDNS, nil
+			ip, dns, again := doneIP, doneDNS, started
+			mu.Unlock()
 			readyOnce.Do(func() { close(ready) })
+			if again {
+				go t.adopt(ip, dns, o.DNS)
+			}
 		}
 	})
 
@@ -403,7 +418,7 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	}
 
 	mu.Lock()
-	t.localIP, t.dns = pushedIP, pushedDNS
+	t.localIP, t.dns = doneIP, doneDNS
 	mu.Unlock()
 	if t.localIP == nil {
 		t.localIP = cfgIP
@@ -430,7 +445,45 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		log.Printf("warning: the VPN sent no DNS servers; names will be resolved by the normal DNS (use -dns to change it)")
 	}
 	log.Printf("OpenVPN: connected. Tunnel IP %s, DNS %v", t.localIP, t.dns)
+	mu.Lock()
+	started = true
+	mu.Unlock()
 	return t, nil
+}
+
+// adopt moves new connections to what the server gave after a reconnection.
+func (t *ovpnTunnel) adopt(ip net.IP, dns, fixedDNS []netip.Addr) {
+	if ip == nil {
+		return
+	}
+	if err := waitForLocalAddr(ip, 30*time.Second); err != nil {
+		log.Printf("OpenVPN reconnected, but: %v", err)
+		return
+	}
+	ifName, err := prepareTunnelInterface(ip)
+	if err != nil {
+		log.Printf("OpenVPN reconnected, but: %v", err)
+		return
+	}
+	t.netMu.Lock()
+	t.localIP, t.ifName = ip, ifName
+	if len(fixedDNS) > 0 {
+		t.dns = fixedDNS
+	} else if len(dns) > 0 {
+		t.dns = dns
+	}
+	current := t.dns
+	t.netMu.Unlock()
+	t.cacheMu.Lock()
+	t.cache = map[string]dnsCacheEntry{}
+	t.cacheMu.Unlock()
+	log.Printf("OpenVPN: reconnected. Tunnel IP %s, DNS %v", ip, current)
+}
+
+func (t *ovpnTunnel) network() (ip net.IP, ifName string, dns []netip.Addr) {
+	t.netMu.RLock()
+	defer t.netMu.RUnlock()
+	return t.localIP, t.ifName, t.dns
 }
 
 func isImportantOVPNLine(l string) bool {
@@ -489,11 +542,12 @@ func waitForLocalAddr(ip net.IP, timeout time.Duration) error {
 }
 
 func (t *ovpnTunnel) dialer(network string) *net.Dialer {
-	d := &net.Dialer{Control: bindControl(t.ifName)}
+	ip, ifName, _ := t.network()
+	d := &net.Dialer{Control: bindControl(ifName)}
 	if strings.HasPrefix(network, "udp") {
-		d.LocalAddr = &net.UDPAddr{IP: t.localIP}
+		d.LocalAddr = &net.UDPAddr{IP: ip}
 	} else {
-		d.LocalAddr = &net.TCPAddr{IP: t.localIP}
+		d.LocalAddr = &net.TCPAddr{IP: ip}
 	}
 	return d
 }
@@ -513,10 +567,11 @@ func (t *ovpnTunnel) resolve(ctx context.Context, host string) ([]net.IP, error)
 	}
 	var ips []net.IP
 	var err error
-	if len(t.dns) == 0 {
+	_, _, servers := t.network()
+	if len(servers) == 0 {
 		ips, err = net.DefaultResolver.LookupIP(ctx, "ip4", host)
 	} else {
-		ips, err = lookupA(ctx, t.dns, host, func(ctx context.Context, network, server string) (net.Conn, error) {
+		ips, err = lookupA(ctx, servers, host, func(ctx context.Context, network, server string) (net.Conn, error) {
 			return t.dialer(network).DialContext(ctx, network+"4", server)
 		})
 	}
@@ -553,8 +608,9 @@ func (t *ovpnTunnel) DialContext(ctx context.Context, network, addr string) (net
 // (strong host on Windows, SO_BINDTODEVICE on Linux), datagrams only leave
 // through the VPN interface.
 func (t *ovpnTunnel) ListenUDP() (net.PacketConn, error) {
-	lc := net.ListenConfig{Control: bindControl(t.ifName)}
-	return lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort(t.localIP.String(), "0"))
+	ip, ifName, _ := t.network()
+	lc := net.ListenConfig{Control: bindControl(ifName)}
+	return lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort(ip.String(), "0"))
 }
 
 func (t *ovpnTunnel) LookupIP(ctx context.Context, host string) (net.IP, error) {

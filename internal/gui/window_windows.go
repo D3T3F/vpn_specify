@@ -64,6 +64,9 @@ func (a *agent) runWindow(autoClose bool) {
 	for name, f := range a.upd.api() {
 		must(w.Bind(name, f))
 	}
+	for name, f := range newGateFinder(a.store).api() {
+		must(w.Bind(name, f))
+	}
 	// vsSetLanguage switches the interface language and saves the choice.
 	must(w.Bind("vsSetLanguage", func(code string) (i18n.PageState, error) {
 		if err := i18n.Save(code); err != nil {

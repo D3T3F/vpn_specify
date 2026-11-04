@@ -340,6 +340,7 @@ class MainActivity : Activity() {
             }, lp(top = 6))
         }
         addView(button(T("Import file…")) { pickFile() }, lp(top = 10))
+        addView(button(T("Search VPN Gate…")) { searchVpnGate() }, lp(top = 6))
         hint(T("WireGuard (.conf) and OpenVPN (.ovpn) files are supported."))
     }
 
@@ -458,6 +459,109 @@ class MainActivity : Activity() {
         val name = store.save(file.substringBeforeLast('.'), body, if (wireGuard) "conf" else "ovpn")
         if (store.configs().size == 1) store.active = name
         render()
+    }
+
+    // ---- VPN Gate ------------------------------------------------------------
+
+    private fun searchVpnGate() {
+        var all = listOf<Native.GateServer>()
+        var servers = listOf<Native.GateServer>()
+        var proto = ""
+        val status = text(T("Searching for servers…"), 13f, muted)
+        val none = text(T("No server matches this filter."), 13f, muted).apply { visibility = View.GONE }
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = servers.size
+            override fun getItem(i: Int) = servers[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, reuse: View?, parent: ViewGroup): View = gateRow(servers[i]) {
+                notifyDataSetChanged()
+            }
+        }
+        val query = EditText(this).apply {
+            hint = T("Search country…")
+            setSingleLine()
+            visibility = View.GONE
+        }
+        val protocols = android.widget.RadioGroup(this).apply {
+            orientation = android.widget.RadioGroup.HORIZONTAL
+            visibility = View.GONE
+        }
+        fun applyFilters() {
+            servers = all.filter { VpnGate.matches(it, query.text.toString(), proto) }
+            none.visibility = if (all.isNotEmpty() && servers.isEmpty()) View.VISIBLE else View.GONE
+            adapter.notifyDataSetChanged()
+        }
+        for ((label, value) in listOf(T("All protocols") to "", "TCP" to "tcp", "UDP" to "udp")) {
+            protocols.addView(android.widget.RadioButton(this).apply {
+                text = label
+                id = View.generateViewId()
+                isChecked = value.isEmpty()
+                setOnClickListener {
+                    proto = value
+                    applyFilters()
+                }
+            })
+        }
+        query.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = applyFilters()
+        })
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(4), dp(16), 0)
+            addView(text(T("VPN Gate servers are run by volunteers. An operator can see traffic that is not encrypted, and servers may keep logs, so avoid them for banking and important accounts. Some may also be offline: if one does not connect, try another."), 12.5f, muted))
+            addView(status, lp(top = 8))
+            addView(query, lp(top = 4))
+            addView(protocols, lp())
+            addView(none, lp(top = 4))
+            addView(ListView(context).apply { this.adapter = adapter }, lp(h = dp(320), top = 4))
+        }
+        dialog().setTitle(T("VPN Gate servers")).setView(box)
+            .setPositiveButton(T("Close"), null).create().showDirected()
+
+        thread {
+            val result = runCatching { VpnGate.search(this) }
+            main.post {
+                result.onSuccess { r ->
+                    all = r.servers
+                    query.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+                    protocols.visibility = query.visibility
+                    applyFilters()
+                    status.text = when {
+                        all.isEmpty() -> T("VPN Gate has no server available right now.")
+                        r.near.isNotEmpty() -> T("Closest to {0} first.", VpnGate.countryName(r.near, r.near))
+                        else -> T("Your country was not detected: the best rated servers come first.")
+                    }
+                }.onFailure { e ->
+                    status.text = e.message ?: e.toString()
+                }
+            }
+        }
+    }
+
+    private fun gateRow(s: Native.GateServer, changed: () -> Unit): View = row {
+        setPadding(0, dp(6), 0, dp(6))
+        val info = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text("${VpnGate.countryName(s.country, s.countryName)} · ${s.proto.uppercase()}", bold = true))
+            addView(text(s.host, 12.5f, muted))
+            addView(text(T("Port {0} · {1} Mbps · {2} sessions", s.port, "%.1f".format(s.speed / 1e6), s.sessions), 12.5f, muted))
+        }
+        addView(info, lp(0, weight = 1f))
+        val added = s.name in store.configs()
+        addView(rowButton(if (added) T("Added") else T("Add")) {
+            try {
+                val config = Native.vpnGateConfig(s.id)
+                Native.planOpenVpn(config)
+                val name = store.save(s.name, config, "ovpn")
+                if (store.configs().size == 1) store.active = name
+                render()
+                changed()
+            } catch (e: Native.GoError) {
+                message(e.message ?: "")
+            }
+        }.apply { isEnabled = !added })
     }
 
     // ---- choosing apps ------------------------------------------------------

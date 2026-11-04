@@ -14,11 +14,20 @@ object Native {
 
     class GoError(message: String) : Exception(message)
 
-    private fun request(method: String, config: String? = null, fd: Int? = null, text: String? = null): Any? {
+    private fun request(
+        method: String,
+        config: String? = null,
+        fd: Int? = null,
+        text: String? = null,
+        gateList: String? = null,
+        gateHome: String? = null,
+    ): Any? {
         val req = JSONObject().put("method", method)
         if (config != null) req.put("config", config)
         if (fd != null) req.put("fd", fd)
         if (text != null) req.put("text", text)
+        if (gateList != null) req.put("gateList", gateList)
+        if (gateHome != null) req.put("gateHome", gateHome)
         val reply = JSONObject(String(call(req.toString().toByteArray()), Charsets.UTF_8))
         if (reply.has("error")) throw GoError(reply.getString("error"))
         return reply.opt("result")
@@ -70,6 +79,41 @@ object Native {
         val o = request("planOpenVPN", config = text) as JSONObject
         return OvpnPlan(o.getString("config"), o.optBoolean("needsAuth"))
     }
+
+    data class GateServer(
+        val id: String,
+        val name: String,
+        val host: String,
+        val ip: String,
+        val country: String,
+        val countryName: String,
+        val proto: String,
+        val port: Int,
+        val speed: Long,
+        val sessions: Int,
+    )
+
+    data class GateList(val servers: List<GateServer>, val near: String)
+
+    /** Reads what VPN Gate answered, closest country first; throws [GoError]. */
+    fun vpnGateList(list: String, home: String?, locale: String): GateList {
+        val o = request("vpnGateList", text = locale, gateList = list, gateHome = home) as JSONObject
+        val a = o.optJSONArray("servers") ?: JSONArray()
+        return GateList(
+            List(a.length()) {
+                val s = a.getJSONObject(it)
+                GateServer(
+                    s.getString("id"), s.getString("name"), s.getString("host"), s.getString("ip"),
+                    s.getString("country"), s.getString("countryName"), s.getString("proto"),
+                    s.getInt("port"), s.getLong("speed"), s.getInt("sessions"),
+                )
+            },
+            o.optString("near"),
+        )
+    }
+
+    /** The configuration of a server of the last list. */
+    fun vpnGateConfig(id: String): String = request("vpnGateConfig", text = id) as String
 
     fun appendLog(line: String) {
         request("appendLog", text = line)

@@ -64,6 +64,8 @@ vpn_specify-setup.exe /silent [/dir=D:\Apps] [/nodesktop] [/nostartmenu] [/lang=
 3. **创建快捷方式**：例如在开始菜单（如需要也可在桌面）创建 `DiscordVPN`。
    它会出现在 Windows 搜索中，位于原版 Discord 旁边。
 
+**VPN > 搜索 VPN Gate…** 会列出 [VPN Gate](https://www.vpngate.net)(筑波大学的学术项目)的公共服务器,离您所在国家最近的排在最前,并显示每个服务器的协议(TCP 或 UDP)。**添加**会把服务器保存到您导入的文件旁边。列表来自 VPN Gate 的 API,目前约有 100 台服务器,每台服务器一种协议。这些服务器由志愿者运营,他们可以看到未加密的流量,部分服务器也可能已离线;请勿用于银行和重要账户。 列表可以按国家和协议(TCP 或 UDP)筛选。
+
 打开快捷方式时：
 
 - 如果 VPN 未开启，UAC 会出现一次。一个窗口显示进度、连接、打开应用后自动
@@ -287,7 +289,7 @@ vpn_specify status
 
 安装 `vpn_specify-<版本>-android-arm64.apk`(Android 8 或更高版本;出现提示时允许从此来源安装)。Android 内置按应用 VPN,因此应用不使用代理:所选应用的全部 TCP 和 UDP 流量(包括语音)都经过隧道,无需 root。手机的其余部分仍在您的普通网络上。
 
-1. **导入文件…**:选择 WireGuard `.conf` 或 OpenVPN `.ovpn`。
+1. **导入文件…**:选择 WireGuard `.conf` 或 OpenVPN `.ovpn`。 也可以通过**搜索 VPN Gate…**添加公共服务器。
 2. **选择应用…**:勾选使用 VPN 的应用,例如 Discord。
 3. **连接**,并在首次时接受 Android 的 VPN 权限。
 

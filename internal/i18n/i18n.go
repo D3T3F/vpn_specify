@@ -237,6 +237,9 @@ func N(s string) string { return s }
 // is loaded).
 func Sentinel(msg string) error { return sentinel(msg) }
 
+// SystemLocales returns the locale names of the system, preferred first.
+func SystemLocales() []string { return systemLocales() }
+
 type sentinel string
 
 func (s sentinel) Error() string { return T(string(s)) }
