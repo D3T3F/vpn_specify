@@ -335,6 +335,7 @@ um app usar a VPN:
 
 Limitações no Android:
 
+- Um app escolhido nunca sai por fora da VPN. Se a VPN só alcança uma rede interna, sites da internet não abrem nesse app.
 - OpenVPN: os certificados e chaves precisam estar dentro do `.ovpn`, TAP não é suportado e chave privada com senha ainda não é suportada. Diretivas que executariam programas são removidas.
 - O Android mantém uma VPN ativa por vez: iniciar outra desliga esta.
 - Mudar os apps ou a VPN com a conexão ativa recria o túnel, o que interrompe os

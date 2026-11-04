@@ -355,6 +355,7 @@ de faire utiliser le VPN à une application :
 
 Limites sur Android :
 
+- Une application choisie ne sort jamais en dehors du VPN. Si le VPN n'atteint qu'un réseau interne, les sites internet ne s'ouvriront pas dans cette application.
 - OpenVPN : les certificats et clés doivent être dans le `.ovpn`, TAP n'est pas pris en charge et une clé privée avec mot de passe ne l'est pas encore. Les directives qui lanceraient des programmes sont supprimées.
 - Android ne garde qu'un seul VPN actif : en lancer un autre désactive celui-ci.
 - Changer les applications ou le VPN pendant la connexion recrée le tunnel, ce qui

@@ -249,16 +249,17 @@ class OpenVpnProcess(
                 pending.addresses += ip to bits
             }
             "ROUTE" -> {
-                // network mask gateway [dev iface]. With a device the route leaves
-                // through the normal network, which is what not routing it does.
+                // network mask gateway dev iface. Every route names the same "dev",
+                // so only the gateway tells them apart: this pseudo-address marks a
+                // route that must stay outside the VPN (net_gateway in a .ovpn).
                 val f = detail.split(" ")
-                if (f.size >= 2 && "dev" !in f) pending.routes += maskedRoute(f[0], prefixOf(f[1]))
+                if (f.size >= 3 && f[2] != OUTSIDE_GATEWAY) pending.routes += maskedRoute(f[0], prefixOf(f[1]))
             }
             "ROUTE6" -> {
                 val f = detail.split(" ")
                 val parts = f[0].split("/")
-                val isTun = f.size < 2 || f[1].startsWith("tun")
-                if (parts.size == 2 && isTun) parts[1].toIntOrNull()?.let { pending.routes += parts[0] to it }
+                val outside = f.size >= 2 && f[1] == OUTSIDE_DEVICE
+                if (parts.size == 2 && !outside) parts[1].toIntOrNull()?.let { pending.routes += parts[0] to it }
             }
             "DNSSERVER", "DNS6SERVER" -> if (detail.isNotBlank()) pending.dns += detail.trim()
             "DNSDOMAIN" -> if (detail.isNotBlank()) pending.domains += detail.trim()
@@ -308,6 +309,10 @@ class OpenVpnProcess(
         private const val TAG = "vpn_specify"
         private const val CONNECT_WAIT_MS = 10_000L
         private const val EXIT_WAIT_MS = 3_000L
+        // What openvpn built for Android reports as the normal network's gateway:
+        // 127.'d'.'g'.'w', in get_default_gateway() of its route.c
+        private const val OUTSIDE_GATEWAY = "127.100.103.119"
+        private const val OUTSIDE_DEVICE = "android-gw"
 
         internal fun prefixOf(mask: String): Int =
             mask.split(".").sumOf { Integer.bitCount(it.toIntOrNull() ?: 0) }

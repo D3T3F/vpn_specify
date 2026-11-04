@@ -353,6 +353,7 @@ wie eine App das VPN nutzt:
 
 Einschränkungen unter Android:
 
+- Eine gewählte App kommuniziert nie außerhalb des VPN. Erreicht das VPN nur ein internes Netzwerk, öffnen sich Internetseiten in dieser App nicht.
 - OpenVPN: Zertifikate und Schlüssel müssen in der `.ovpn` enthalten sein, TAP wird nicht unterstützt und ein privater Schlüssel mit Passwort noch nicht. Direktiven, die Programme starten würden, werden entfernt.
 - Android hält nur ein VPN aktiv: Ein anderes zu starten schaltet dieses aus.
 - Wenn Sie Apps oder VPN während der Verbindung ändern, wird der Tunnel neu

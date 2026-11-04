@@ -101,6 +101,7 @@ class TunnelService : VpnService() {
                 val (ip, bits) = r.split("/")
                 b.addRoute(ip, bits.toInt())
             }
+            routeEverything(b, plan.addresses.map { it.substringBefore('/') })
             plan.dns.forEach { b.addDnsServer(it) }
             if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
 
@@ -122,6 +123,17 @@ class TunnelService : VpnService() {
             Log.w(TAG, "start failed", e)
             fail(g, e.message ?: e.toString())
         }
+    }
+
+    /**
+     * A chosen app must never leave outside the VPN, whatever routes the
+     * configuration or the server name, as in the desktop versions. A destination
+     * the VPN cannot reach fails there instead of quietly using the normal network.
+     * A family without an address stays blocked: Android does that by itself.
+     */
+    private fun routeEverything(b: Builder, addresses: List<String>) {
+        if (addresses.any { ':' !in it }) b.addRoute("0.0.0.0", 0)
+        if (addresses.any { ':' in it }) b.addRoute("::", 0)
     }
 
     /**
@@ -171,6 +183,7 @@ class TunnelService : VpnService() {
                 val b = Builder().setSession(config).setMtu(settings.mtu)
                 settings.addresses.forEach { (ip, bits) -> b.addAddress(ip, bits) }
                 settings.routes.forEach { (ip, bits) -> b.addRoute(ip, bits) }
+                routeEverything(b, settings.addresses.map { it.first })
                 settings.dns.forEach { b.addDnsServer(it) }
                 settings.domains.forEach { b.addSearchDomain(it) }
                 if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
