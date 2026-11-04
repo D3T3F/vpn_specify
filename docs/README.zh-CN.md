@@ -287,7 +287,7 @@ vpn_specify status
 
 安装 `vpn_specify-<版本>-android-arm64.apk`(Android 8 或更高版本;出现提示时允许从此来源安装)。Android 内置按应用 VPN,因此应用不使用代理:所选应用的全部 TCP 和 UDP 流量(包括语音)都经过隧道,无需 root。手机的其余部分仍在您的普通网络上。
 
-1. **导入文件…**:选择 WireGuard `.conf`。
+1. **导入文件…**:选择 WireGuard `.conf` 或 OpenVPN `.ovpn`。
 2. **选择应用…**:勾选使用 VPN 的应用,例如 Discord。
 3. **连接**,并在首次时接受 Android 的 VPN 权限。
 
@@ -298,7 +298,7 @@ Android 无法察觉应用何时被打开,因此有两种方式让应用使用 V
 
 Android 上的限制:
 
-- 仅支持 WireGuard:暂不支持 OpenVPN(`.ovpn`)。
+- OpenVPN:证书和密钥必须位于 `.ovpn` 内,不支持 TAP,暂不支持带密码的私钥。会运行程序的指令将被移除。
 - Android 同一时间只保持一个 VPN:启动另一个会关闭此 VPN。
 - 连接期间更改应用或 VPN 会重建隧道,所选应用会短暂中断。
 
@@ -358,6 +358,8 @@ Español、Français、Deutsch、Русский、简体中文、日本語、ह
 [Adding or improving a translation](../README.md#adding-or-improving-a-translation)。
 
 ## 许可证
+
+Android APK 包含 OpenVPN(GPL-2.0),因此 APK 整体按 GPL-2.0 分发。本项目的代码仍为 MIT,每个 APK 的源代码就是本仓库对应版本标签下的内容,包括 `android/openvpn/build.sh`。许可证可在应用的**设置 > 许可证**中查看。
 
 [MIT](../LICENSE)。许可证文本显示在程序中（首选项 > 查看许可证）、安装程序
 中、`.exe` 的属性中，并以 `LICENSE.txt` 随软件包提供。第三方组件保留各自的

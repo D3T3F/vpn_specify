@@ -330,7 +330,7 @@ instalar desde ese origen cuando te lo pida). Android incluye VPN por aplicació
 así que la app no usa proxy: todo el tráfico TCP y UDP de las apps elegidas, voz
 incluida, pasa por el túnel, sin root. El resto del teléfono sigue en tu red normal.
 
-1. **Importar archivo…**: elige un `.conf` de WireGuard.
+1. **Importar archivo…**: elige un `.conf` de WireGuard o un `.ovpn` de OpenVPN.
 2. **Elegir apps…**: marca las apps que usan la VPN, Discord por ejemplo.
 3. **Conectar**, y acepta el permiso de VPN de Android la primera vez.
 
@@ -347,7 +347,7 @@ una app use la VPN:
 
 Limitaciones en Android:
 
-- Solo WireGuard: OpenVPN (`.ovpn`) aún no es compatible.
+- OpenVPN: los certificados y claves deben estar dentro del `.ovpn`, TAP no es compatible y una clave privada con contraseña aún no lo es. Se eliminan las directivas que ejecutarían programas.
 - Android mantiene una sola VPN activa: iniciar otra apaga esta.
 - Cambiar las apps o la VPN mientras está conectada recrea el túnel, lo que
   interrumpe las apps elegidas un momento.
@@ -417,6 +417,8 @@ English, Português (Brasil), Español, Français, Deutsch, Русский, 简�
 [Adding or improving a translation](../README.md#adding-or-improving-a-translation).
 
 ## Licencia
+
+El APK de Android contiene OpenVPN (GPL-2.0), por lo que el APK en su conjunto se distribuye bajo la GPL-2.0. El código de este proyecto sigue siendo MIT, y el código fuente de cada APK es este repositorio en la etiqueta de su versión, con `android/openvpn/build.sh`. Las licencias están en la app, en **Ajustes > Licencias**.
 
 [MIT](../LICENSE). El texto aparece en el programa (Preferencias > Ver
 licencia), en el instalador, en las propiedades de los `.exe` y va en el

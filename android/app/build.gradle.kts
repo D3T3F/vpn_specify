@@ -68,6 +68,9 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    // openvpn runs as a program, so it must exist as a file on the phone
+    packaging { jniLibs { useLegacyPackaging = true } }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -128,6 +131,7 @@ val licenseAssets = tasks.register("licenseAssets") {
     doLast {
         val dest = outDir.get().asFile.apply { deleteRecursively(); mkdirs() }
         repoRoot.resolve("LICENSE").copyTo(dest.resolve("vpn_specify.txt"))
+        rootDir.resolve("openvpn/licenses").listFiles()?.forEach { it.copyTo(dest.resolve(it.name)) }
         dest.resolve("org.jetbrains.kotlin_kotlin-stdlib.txt").writeText(
             "Kotlin standard library\nCopyright JetBrains s.r.o. and Kotlin Programming Language contributors.\n\n" +
                 "Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0\n" +

@@ -89,7 +89,7 @@ class Store private constructor(ctx: Context) {
         set(v) = prefs.edit().putString("language", v).apply()
 
     var active: String?
-        get() = prefs.getString("active", null)?.takeIf { File(dir, "$it.conf").exists() } ?: configs().firstOrNull()
+        get() = prefs.getString("active", null)?.takeIf { it in configs() } ?: configs().firstOrNull()
         set(v) = prefs.edit().putString("active", v).apply()
 
     var apps: Set<String>
@@ -110,22 +110,49 @@ class Store private constructor(ctx: Context) {
         set(v) = prefs.edit().putBoolean("updateCheck", v).apply()
 
     fun configs(): List<String> =
-        dir.listFiles { f -> f.name.endsWith(".conf") }.orEmpty().map { it.name.removeSuffix(".conf") }.sorted()
+        dir.listFiles { f -> f.name.endsWith(".conf") || f.name.endsWith(".ovpn") }.orEmpty()
+            .map { it.name.substringBeforeLast('.') }.sorted()
 
-    fun read(name: String): String = File(dir, "$name.conf").readText()
+    private fun file(name: String): File {
+        val ovpn = File(dir, "$name.ovpn")
+        return if (ovpn.exists()) ovpn else File(dir, "$name.conf")
+    }
+
+    fun read(name: String): String = file(name).readText()
+
+    fun isOpenVpn(name: String) = file(name).name.endsWith(".ovpn")
+
+    /** The saved login of an OpenVPN configuration, if any. */
+    fun login(name: String): Pair<String, String>? {
+        val u = prefs.getString("user:$name", null) ?: return null
+        val p = prefs.getString("password:$name", null) ?: return null
+        return u to p
+    }
+
+    /** Kept when the password is forgotten, to fill in the next question. */
+    fun savedUser(name: String): String? = prefs.getString("user:$name", null)
+
+    fun saveLogin(name: String, user: String, password: String) {
+        prefs.edit().putString("user:$name", user).putString("password:$name", password).apply()
+    }
+
+    fun forgetPassword(name: String) {
+        prefs.edit().remove("password:$name").apply()
+    }
 
     /** Saves under a free name based on [wanted] and returns that name. */
-    fun save(wanted: String, text: String): String {
+    fun save(wanted: String, text: String, extension: String = "conf"): String {
         val base = wanted.replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").trim().trimStart('.').ifEmpty { "vpn" }.take(60)
         var name = base
         var n = 2
-        while (File(dir, "$name.conf").exists()) name = "$base (${n++})"
-        File(dir, "$name.conf").writeText(text)
+        while (name in configs()) name = "$base (${n++})"
+        File(dir, "$name.$extension").writeText(text)
         return name
     }
 
     fun delete(name: String) {
-        File(dir, "$name.conf").delete()
+        file(name).delete()
+        prefs.edit().remove("user:$name").remove("password:$name").apply()
     }
 
     companion object {

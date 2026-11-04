@@ -72,6 +72,11 @@ func dispatch(r Request) (any, error) {
 		return i18n.Catalog(i18n.Current()), nil
 	case "plan":
 		return tunnel.PlanWireGuard([]byte(r.Config))
+	case "planOpenVPN":
+		return tunnel.PlanOpenVPN([]byte(r.Config))
+	case "appendLog":
+		log.Print(r.Text)
+		return nil, nil
 	case "resolve":
 		return nil, tunnel.ResolveWireGuard([]byte(r.Config))
 	case "start":

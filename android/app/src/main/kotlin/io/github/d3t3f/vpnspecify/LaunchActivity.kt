@@ -56,7 +56,12 @@ class LaunchActivity : Activity() {
         pkg = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
         val store = Store.of(this)
         if (packageManager.getLaunchIntentForPackage(pkg) == null) return stop(T("This app is no longer installed."))
-        if (store.active == null) return stop(T("Import a VPN first."))
+        val active = store.active ?: return stop(T("Import a VPN first."))
+        if (store.isOpenVpn(active) && store.login(active) == null &&
+            runCatching { Native.planOpenVpn(store.read(active)).needsAuth }.getOrDefault(false)
+        ) {
+            return stop(T("This VPN asks for a user and password. Open the app and connect."))
+        }
         store.apps = store.apps + pkg
         message.text = T("Connecting…")
 

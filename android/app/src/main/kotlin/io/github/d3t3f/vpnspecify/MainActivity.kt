@@ -261,15 +261,47 @@ class MainActivity : Activity() {
     }
 
     private fun connect() {
+        val active = store.active
         when {
-            store.active == null -> return message(T("Import a VPN first."))
+            active == null -> return message(T("Import a VPN first."))
             store.apps.isEmpty() -> return message(T("Choose at least one app first."))
         }
+        if (needsLogin(active!!)) return askLogin(active) { connect() }
         if (sdkAtLeast33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
         }
         val consent = VpnService.prepare(this)
         if (consent != null) startActivityForResult(consent, REQUEST_VPN) else startTunnel()
+    }
+
+    private fun needsLogin(name: String): Boolean = store.isOpenVpn(name) && store.login(name) == null &&
+        runCatching { Native.planOpenVpn(store.read(name)).needsAuth }.getOrDefault(false)
+
+    private fun askLogin(name: String, then: () -> Unit) {
+        val user = EditText(this).apply {
+            hint = T("User")
+            setSingleLine()
+            setText(store.savedUser(name).orEmpty())
+        }
+        val password = EditText(this).apply {
+            hint = T("Password")
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(user, lp())
+            addView(password, lp(top = 6))
+        }
+        dialog().setTitle(name).setView(box)
+            .setPositiveButton(T("Connect")) { _, _ ->
+                if (user.text.isNotEmpty()) {
+                    store.saveLogin(name, user.text.toString(), password.text.toString())
+                    then()
+                }
+            }
+            .setNegativeButton(T("Cancel"), null).create().showDirected()
     }
 
     private fun startTunnel() {
@@ -287,7 +319,7 @@ class MainActivity : Activity() {
     private fun vpnsCard() = card(T("VPNs")) {
         val configs = store.configs()
         val active = store.active
-        if (configs.isEmpty()) hint(T("No VPN yet. Import a WireGuard .conf file."))
+        if (configs.isEmpty()) hint(T("No VPN yet. Import a .conf or .ovpn file."))
         for (name in configs) {
             addView(row {
                 val selected = name == active
@@ -308,7 +340,7 @@ class MainActivity : Activity() {
             }, lp(top = 6))
         }
         addView(button(T("Import file…")) { pickFile() }, lp(top = 10))
-        hint(T("Android supports WireGuard (.conf) for now. OpenVPN (.ovpn) works on Windows and Linux."))
+        hint(T("WireGuard (.conf) and OpenVPN (.ovpn) files are supported."))
     }
 
     private fun confirmRemoveConfig(name: String) {
@@ -416,15 +448,14 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             return message(e.message ?: e.toString())
         }
-        if (file.endsWith(".ovpn", ignoreCase = true) || !body.contains("[interface]", ignoreCase = true)) {
-            return message(T("OpenVPN (.ovpn) files are not supported on Android yet. Use a WireGuard .conf file."))
-        }
+        // The same test as Open in internal/tunnel/tunnel.go
+        val wireGuard = body.contains("[interface]", ignoreCase = true)
         try {
-            Native.plan(body)
+            if (wireGuard) Native.plan(body) else Native.planOpenVpn(body)
         } catch (e: Native.GoError) {
             return message(e.message ?: "")
         }
-        val name = store.save(file.substringBeforeLast('.'), body)
+        val name = store.save(file.substringBeforeLast('.'), body, if (wireGuard) "conf" else "ovpn")
         if (store.configs().size == 1) store.active = name
         render()
     }

@@ -63,6 +63,18 @@ object Native {
         )
     }
 
+    data class OvpnPlan(val config: String, val needsAuth: Boolean)
+
+    /** Validates a .ovpn and removes what must not run; throws [GoError]. */
+    fun planOpenVpn(text: String): OvpnPlan {
+        val o = request("planOpenVPN", config = text) as JSONObject
+        return OvpnPlan(o.getString("config"), o.optBoolean("needsAuth"))
+    }
+
+    fun appendLog(line: String) {
+        request("appendLog", text = line)
+    }
+
     fun resolve(config: String) {
         request("resolve", config = config)
     }

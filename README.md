@@ -317,7 +317,7 @@ the app does not use a proxy: all the TCP and UDP traffic of the chosen apps,
 voice included, goes through the tunnel, and needs no root. The rest of the
 phone stays on your normal network.
 
-1. **Import file…**: choose a WireGuard `.conf`.
+1. **Import file…**: choose a WireGuard `.conf` or an OpenVPN `.ovpn`.
 2. **Choose apps…**: mark the apps that use the VPN, Discord for example.
 3. **Connect**, and accept Android's VPN permission the first time.
 
@@ -334,7 +334,7 @@ app use the VPN:
 
 Limitations on Android:
 
-- WireGuard only: OpenVPN (`.ovpn`) is not supported yet.
+- OpenVPN: the certificates and keys must be inside the `.ovpn`, TAP is not supported, and a private key with a password is not supported yet. Directives that would run programs are removed.
 - Android keeps one VPN active at a time: starting another one turns this one off.
 - Changing the apps or the VPN while connected recreates the tunnel, which
   interrupts the chosen apps for a moment.
@@ -426,6 +426,8 @@ list of missing messages per language. To add a language, add it to
 
 ## License
 
+The Android APK contains OpenVPN (GPL-2.0), so the APK as a whole is distributed under the GPL-2.0. The source of this project stays MIT, and the source of each APK is this repository at the tag of its release, with `android/openvpn/build.sh`. The licenses are in the app, under **Settings > Licenses**.
+
 [MIT](LICENSE). The text appears in the program (Preferences > View license),
 in the installer, in the `.exe` properties and ships in the package as
 `LICENSE.txt`. Third-party components keep their own licenses: WinDivert
@@ -499,6 +501,14 @@ which is only for testing. **Keep the keystore and its password backed up**:
 Android refuses an update signed with another key.
 
 To run on an x86_64 emulator: `cd android; .\gradlew assembleDebug -Pabis=x86_64`.
+
+OpenVPN inside the APK is `android/app/src/main/jniLibs/<abi>/libovpnexec.so`, built, unmodified,
+from the official sources by `android/openvpn/build.sh` (Linux or WSL), which pins each version and
+its SHA-256. Run it again only to change versions.
+
+**License of the APK:** it contains OpenVPN (GPL-2.0), so the APK as a whole is distributed under the
+GPL-2.0, while the code of this project stays MIT. Each release must make the corresponding source
+available: this repository at the tag of that release, which includes the build script.
 
 ### Publishing a version
 

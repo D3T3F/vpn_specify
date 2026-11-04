@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import java.util.concurrent.Executors
+import kotlin.concurrent.thread
 
 /**
  * The VPN. Android does what the desktop versions need a proxy for: only the
@@ -35,6 +36,7 @@ class TunnelService : VpnService() {
     // Each start or stop gets a new number; older work sees it and gives up.
     @Volatile private var generation = 0
     private var network: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var openVpn: OpenVpnProcess? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // No intent: the system restarted the service. An always-on start has
@@ -61,7 +63,7 @@ class TunnelService : VpnService() {
 
     private fun run(g: Int) {
         val config = store.active
-        runCatching { Native.stop() }
+        stopBackends()
         val text = try {
             if (config == null) throw Native.GoError(T("Import a VPN first."))
             store.read(config)
@@ -71,6 +73,8 @@ class TunnelService : VpnService() {
 
         VpnState.set(VpnState.Phase.CONNECTING, T("Connecting…"), config = config, tunUp = false, apps = emptySet())
         updateNotification()
+
+        if (config != null && store.isOpenVpn(config)) return runOpenVpn(g, config, text)
 
         try {
             val plan = Native.plan(text)
@@ -100,18 +104,7 @@ class TunnelService : VpnService() {
             plan.dns.forEach { b.addDnsServer(it) }
             if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
 
-            // Never establish with an empty list: for Android that means every
-            // app on the phone, the opposite of what this app promises.
-            val used = mutableSetOf<String>()
-            for (pkg in store.apps) {
-                if (pkg == packageName) continue
-                try {
-                    b.addAllowedApplication(pkg)
-                    used += pkg
-                } catch (e: PackageManager.NameNotFoundException) {
-                    Log.i(TAG, "skipping $pkg: not installed")
-                }
-            }
+            val used = allowApps(b)
             if (used.isEmpty()) return fail(g, T("Choose at least one app first."))
 
             val pfd = b.establish() ?: return fail(g, T("VPN permission is missing. Open the app and connect once."))
@@ -128,6 +121,132 @@ class TunnelService : VpnService() {
         } catch (e: Exception) {
             Log.w(TAG, "start failed", e)
             fail(g, e.message ?: e.toString())
+        }
+    }
+
+    /**
+     * Never establish with an empty list: for Android that means every app on
+     * the phone, the opposite of what this app promises.
+     */
+    private fun allowApps(b: Builder): Set<String> {
+        val used = mutableSetOf<String>()
+        for (pkg in store.apps) {
+            if (pkg == packageName) continue
+            try {
+                b.addAllowedApplication(pkg)
+                used += pkg
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.i(TAG, "skipping $pkg: not installed")
+            }
+        }
+        return used
+    }
+
+    private fun stopBackends() {
+        runCatching { Native.stop() }
+        openVpn?.stop()
+    }
+
+    /** Blocks on this worker thread until openvpn exits, like monitor() does. */
+    private fun runOpenVpn(g: Int, config: String, text: String) {
+        val plan = try {
+            Native.planOpenVpn(text)
+        } catch (e: Native.GoError) {
+            return fail(g, e.message ?: e.toString())
+        }
+        val login = if (plan.needsAuth) {
+            store.login(config) ?: return fail(g, T("This VPN asks for a user and password. Open the app and connect."))
+        } else {
+            null
+        }
+        var buildFailure: String? = null
+        val started = System.currentTimeMillis()
+        val process = OpenVpnProcess(
+            nativeDir = applicationInfo.nativeLibraryDir,
+            runDir = java.io.File(filesDir, "openvpn-run"),
+            config = plan.config,
+            user = login?.first,
+            password = login?.second,
+            openTun = { settings ->
+                val b = Builder().setSession(config).setMtu(settings.mtu)
+                settings.addresses.forEach { (ip, bits) -> b.addAddress(ip, bits) }
+                settings.routes.forEach { (ip, bits) -> b.addRoute(ip, bits) }
+                settings.dns.forEach { b.addDnsServer(it) }
+                settings.domains.forEach { b.addSearchDomain(it) }
+                if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
+                val used = allowApps(b)
+                if (used.isEmpty()) {
+                    buildFailure = T("Choose at least one app first.")
+                    openVpn?.stop()
+                    null
+                } else {
+                    b.establish().also {
+                        if (it == null) {
+                            buildFailure = T("VPN permission is missing. Open the app and connect once.")
+                            openVpn?.stop()
+                        } else {
+                            VpnState.set(VpnState.Phase.CONNECTING, T("Waiting for the server…"), tunUp = true, apps = used)
+                        }
+                    }
+                }
+            },
+            onState = { state, _ ->
+                if (g == generation) {
+                    when (state) {
+                        OpenVpnProcess.State.CONNECTED -> VpnState.set(VpnState.Phase.CONNECTED)
+                        OpenVpnProcess.State.CONNECTING -> VpnState.set(
+                            VpnState.Phase.CONNECTING,
+                            if (System.currentTimeMillis() - started > NO_ANSWER_MS) {
+                                T("No answer from the server yet. Check the configuration and the network.")
+                            } else {
+                                T("Connecting…")
+                            },
+                        )
+                    }
+                    updateNotification()
+                }
+            },
+            onBytes = { rx, tx ->
+                VpnState.stats = Native.Stats(rx, tx, 0)
+                VpnState.notifyListeners()
+            },
+            onLog = { line -> runCatching { Native.appendLog("[openvpn] $line") } },
+        )
+        openVpn = process
+        watchNetwork()
+        // openvpn keeps retrying quietly when nothing answers, so no state change
+        // would ever tell the user that.
+        val watcher = thread(name = "openvpn-watcher") {
+            try {
+                while (g == generation && openVpn === process) {
+                    Thread.sleep(2000)
+                    if (g == generation && VpnState.phase == VpnState.Phase.CONNECTING &&
+                        System.currentTimeMillis() - started > NO_ANSWER_MS
+                    ) {
+                        VpnState.set(VpnState.Phase.CONNECTING, T("No answer from the server yet. Check the configuration and the network."))
+                    }
+                }
+            } catch (e: InterruptedException) {
+                return@thread
+            }
+        }
+        try {
+            process.run()
+        } catch (e: Exception) {
+            Log.w(TAG, "openvpn", e)
+            buildFailure = buildFailure ?: (e.message ?: e.toString())
+        }
+        if (openVpn === process) openVpn = null
+        watcher.interrupt()
+        if (g != generation) return
+        when (process.failure) {
+            OpenVpnProcess.Failure.AUTH -> {
+                store.forgetPassword(config)
+                fail(g, T("The server refused the user or password."))
+            }
+            OpenVpnProcess.Failure.KEY_PASSWORD ->
+                fail(g, T("This VPN's private key has a password, which Android does not support yet."))
+            null -> fail(g, buildFailure ?: process.lastError ?: T("OpenVPN stopped. See the log for the reason."))
         }
     }
 
@@ -181,15 +300,15 @@ class TunnelService : VpnService() {
         if (g != generation) return
         generation++
         store.wantOn = false
-        runCatching { Native.stop() }
+        stopBackends()
         VpnState.set(VpnState.Phase.ERROR, message, tunUp = false, apps = emptySet())
         main.post { leave() }
     }
 
     private fun shutdown() {
         generation++
+        stopBackends()
         worker.execute {
-            runCatching { Native.stop() }
             VpnState.set(VpnState.Phase.OFF, tunUp = false, apps = emptySet(), config = null)
         }
         main.post { leave() }
@@ -215,7 +334,10 @@ class TunnelService : VpnService() {
             val registered = System.currentTimeMillis()
             val rebind = Runnable {
                 networkWorker.execute {
-                    val r = runCatching { Native.rebind() }
+                    val r = runCatching {
+                        Native.rebind()
+                        openVpn?.networkChanged()
+                    }
                     Log.i(TAG, "rebind: ${r.exceptionOrNull() ?: "ok"}")
                 }
             }
@@ -299,7 +421,7 @@ class TunnelService : VpnService() {
     override fun onRevoke() {
         store.wantOn = false
         generation++
-        worker.execute { runCatching { Native.stop() } }
+        stopBackends()
         VpnState.set(VpnState.Phase.ERROR, T("Android turned this VPN off: another VPN was started, or the permission was removed."), tunUp = false, apps = emptySet())
         main.post { leave() }
     }
@@ -307,7 +429,7 @@ class TunnelService : VpnService() {
     override fun onDestroy() {
         generation++
         stopWatchingNetwork()
-        worker.execute { runCatching { Native.stop() } }
+        stopBackends()
         worker.shutdown()
         networkWorker.shutdown()
         if (VpnState.phase != VpnState.Phase.ERROR) VpnState.set(VpnState.Phase.OFF, tunUp = false, apps = emptySet(), config = null)
