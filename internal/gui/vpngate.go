@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"vpn_specify/internal/i18n"
+	"vpn_specify/internal/latency"
 	"vpn_specify/internal/store"
 	"vpn_specify/internal/vpngate"
 )
@@ -34,6 +35,16 @@ func (g *gateFinder) api() map[string]any {
 			g.list = l
 			g.mu.Unlock()
 			return l, nil
+		},
+		// vsVpnGateBest measures the servers nearest to the user, for "Find the best server".
+		"vsVpnGateBest": func() ([]latency.Result, error) {
+			g.mu.Lock()
+			l := g.list
+			g.mu.Unlock()
+			if l == nil {
+				return nil, i18n.Error("this server is no longer on the list; search again")
+			}
+			return latency.Rank(context.Background(), l.Targets(16)), nil
 		},
 		"vsVpnGateAdd": func(id string) (*store.VPNConfig, error) {
 			g.mu.Lock()

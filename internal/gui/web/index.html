@@ -84,7 +84,11 @@ dialog .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .toast.error { border-left-color: var(--err); } .toast.ok { border-left-color: var(--ok); }
 .avatar img { width: 26px; height: 26px; object-fit: contain; }
 .item.pick { cursor: pointer; } .item.pick:hover { background: var(--chip); }
-#pickList, #gateList { max-height: 52vh; overflow: auto; }
+#pickList, #gateList, #riseupList { max-height: 52vh; overflow: auto; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 12px; }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+#gatePanel, #riseupPanel { display: grid; gap: 12px; }
 .badge.proto { color: var(--accent); text-transform: uppercase; }
 input[type=search] { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; width: 100%; }
 .card.update { border-color: var(--accent); }
@@ -227,20 +231,43 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
 </dialog>
 <dialog id="gateDlg" class="wide">
   <form method="dialog" onsubmit="return false">
-    <h3 data-i18n>VPN Gate servers</h3>
-    <p class="hint" data-i18n>VPN Gate servers are run by volunteers. An operator can see traffic that is not encrypted, and servers may keep logs, so avoid them for banking and important accounts. Some may also be offline: if one does not connect, try another.</p>
-    <p class="hint" id="gateStatus"></p>
-    <div class="row" id="gateFilters" hidden>
-      <input type="search" id="gateQuery" data-i18n-attr="placeholder" placeholder="Search country…" oninput="renderGate()" autocomplete="off">
-      <select id="gateProto" style="flex: none; width: auto" onchange="renderGate()">
-        <option value="" data-i18n>All protocols</option>
-        <option value="tcp">TCP</option>
-        <option value="udp">UDP</option>
-      </select>
+    <div class="tabs" role="tablist" data-i18n-attr="aria-label" aria-label="Server source">
+      <button type="button" role="tab" id="tabGate" aria-controls="gatePanel" aria-selected="true" onclick="showGateTab('gate')" data-i18n>VPN Gate</button>
+      <button type="button" role="tab" id="tabRiseup" aria-controls="riseupPanel" aria-selected="false" onclick="showGateTab('riseup')" data-i18n>RiseUp</button>
     </div>
-    <div id="gateList" class="list" hidden></div>
+    <div id="gatePanel" role="tabpanel" aria-labelledby="tabGate">
+      <h3 data-i18n>VPN Gate servers</h3>
+      <p class="hint" data-i18n>VPN Gate servers are run by volunteers. An operator can see traffic that is not encrypted, and servers may keep logs, so avoid them for banking and important accounts. Some may also be offline: if one does not connect, try another.</p>
+      <p class="hint" id="gateStatus"></p>
+      <div class="row" id="gateBestRow" hidden>
+        <label class="check"><input type="checkbox" id="gateBestOn" onchange="toggleBest('gate', this.checked)">
+          <span data-i18n>Find the best server</span></label>
+        <button type="button" class="small primary" id="gateBest" onclick="addBestGate()" hidden data-i18n>Add best server</button>
+      </div>
+      <div class="row" id="gateFilters" hidden>
+        <input type="search" id="gateQuery" data-i18n-attr="placeholder" placeholder="Search country…" oninput="renderGate()" autocomplete="off">
+        <select id="gateProto" style="flex: none; width: auto" onchange="renderGate()">
+          <option value="" data-i18n>All protocols</option>
+          <option value="tcp">TCP</option>
+          <option value="udp">UDP</option>
+        </select>
+      </div>
+      <div id="gateList" class="list" hidden></div>
+    </div>
+    <div id="riseupPanel" role="tabpanel" aria-labelledby="tabRiseup" hidden>
+      <p class="hint" id="riseupStatus"></p>
+      <div class="row" id="riseupBestRow" hidden>
+        <label class="check"><input type="checkbox" id="riseupBestOn" onchange="toggleBest('riseup', this.checked)">
+          <span data-i18n>Find the best server</span></label>
+        <button type="button" class="small primary" id="riseupBest" onclick="addBestRiseup()" hidden data-i18n>Add best server</button>
+      </div>
+      <div class="row" id="riseupFilters" hidden>
+        <input type="search" id="riseupQuery" data-i18n-attr="placeholder" placeholder="Search country or city…" oninput="renderRiseup()" autocomplete="off">
+      </div>
+      <div id="riseupList" class="list" hidden></div>
+    </div>
     <div class="buttons">
-      <button type="button" id="gateAgain" onclick="searchGate()" data-i18n>Search again</button>
+      <button type="button" id="gateAgain" onclick="searchActiveTab()" data-i18n>Search again</button>
       <button type="button" onclick="gateDlg.close()" data-i18n>Close</button>
     </div>
   </form>
@@ -530,9 +557,29 @@ function regionName(code, fallback) {
     return regionNames.of(code) || fallback;
   } catch (e) { return fallback; }
 }
+let gateTab = "gate";
 function openGate() {
   gateDlg.showModal();
-  if (!gateServers.length) searchGate();
+  showGateTab(gateTab);
+}
+// Switches between the VPN Gate and RiseUp tabs, and searches the one shown
+// when it has no list yet.
+function showGateTab(tab) {
+  gateTab = tab;
+  const riseup = tab === "riseup";
+  $("tabGate").setAttribute("aria-selected", String(!riseup));
+  $("tabRiseup").setAttribute("aria-selected", String(riseup));
+  $("gatePanel").hidden = riseup;
+  $("riseupPanel").hidden = !riseup;
+  syncGateAgain();
+  if (!(riseup ? riseupServers : gateServers).length) searchActiveTab();
+}
+// Each tab searches on its own: "Search again" is only blocked by the search of the tab shown.
+const gateBusy = { gate: false, riseup: false };
+function syncGateAgain() { $("gateAgain").disabled = gateBusy[gateTab]; }
+function searchActiveTab() {
+  if (gateBusy[gateTab]) return;
+  if (gateTab === "riseup") searchRiseup(); else searchGate();
 }
 const foldText = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 // The country is found by its name in the language of the page, its name in
@@ -544,29 +591,38 @@ function gateMatches(s, query, proto) {
     || [regionName(s.country, s.countryName), s.countryName].some(n => foldText(n).includes(query));
 }
 async function searchGate() {
-  $("gateAgain").disabled = true;
+  gateBusy.gate = true; syncGateAgain();
+  bestState.gate.run++; // a measurement of the old list must not land on the new one
   $("gateList").hidden = true;
   $("gateFilters").hidden = true;
+  $("gateBestRow").hidden = true;
   $("gateStatus").classList.remove("err");
   $("gateStatus").textContent = t("Searching for servers…");
   try {
     const r = await vsVpnGateList();
     gateServers = r.servers;
-    $("gateStatus").textContent = !gateServers.length ? t("VPN Gate has no server available right now.")
+    bestState.gate.note = !gateServers.length ? t("VPN Gate has no server available right now.")
       : r.near ? t("Closest to {0} first.", regionName(r.near, r.near))
       : t("Your country was not detected: the best rated servers come first.");
+    $("gateStatus").textContent = bestState.gate.note;
     renderGate();
+    measureBest("gate");
   } catch (e) {
     gateServers = [];
     $("gateStatus").classList.add("err");
     $("gateStatus").textContent = String(e);
   }
-  $("gateAgain").disabled = false;
+  gateBusy.gate = false; syncGateAgain();
 }
 function renderGate() {
   const added = new Set(state.settings.configs.map(c => c.name));
   const query = foldText($("gateQuery").value.trim()), proto = $("gateProto").value;
-  const shown = gateServers.filter(s => gateMatches(s, query, proto));
+  const best = bestRowOf("gate");
+  const shown = orderRows("gate", gateServers).filter(s => gateMatches(s, query, proto));
+  $("gateBestRow").hidden = !gateServers.length;
+  // The button adds the fastest server that is not added yet.
+  $("gateBest").hidden = !bestRowOf("gate", true);
+  $("gateBest").disabled = false;
   $("gateFilters").hidden = !gateServers.length;
   $("gateList").hidden = !gateServers.length;
   if (gateServers.length && !shown.length) {
@@ -576,7 +632,7 @@ function renderGate() {
   $("gateList").innerHTML = shown.map(s => `<div class="item">
     <div class="avatar">${esc(s.country)}</div>
     <div class="grow">
-      <div class="title">${esc(regionName(s.country, s.countryName))} · ${esc(s.host)}<span class="badge proto">${esc(s.proto)}</span></div>
+      <div class="title">${esc(regionName(s.country, s.countryName))} · ${esc(s.host)}<span class="badge proto">${esc(s.proto)}</span>${bestBadges("gate", s, best)}</div>
       <div class="sub">${esc(s.ip)} · ${esc(t("Port {0} · {1} Mbps · {2} sessions", s.port, (s.speed / 1e6).toFixed(1), s.sessions))}</div>
     </div>
     <button type="button" class="small" ${added.has(s.name) ? "disabled" : ""} data-id="${esc(s.id)}" onclick="addGate(this)">${esc(added.has(s.name) ? t("Added") : t("Add"))}</button>
@@ -594,6 +650,178 @@ async function addGate(btn) {
     $("gateStatus").textContent = String(e);
   }
 }
+// ---------- RiseUp ----------
+let riseupServers = [];
+function riseupMatches(s, query) {
+  if (!query) return true;
+  return foldText(s.country) === query
+    || [regionName(s.country, s.city), s.city].some(n => foldText(n).includes(query));
+}
+async function searchRiseup() {
+  gateBusy.riseup = true; syncGateAgain();
+  bestState.riseup.run++; // a measurement of the old list must not land on the new one
+  $("riseupList").hidden = true;
+  $("riseupFilters").hidden = true;
+  $("riseupBestRow").hidden = true;
+  $("riseupStatus").classList.remove("err");
+  $("riseupStatus").textContent = t("Searching for servers…");
+  try {
+    const r = await vsRiseupList();
+    riseupServers = r.servers;
+    bestState.riseup.note = riseupServers.length ? t("{0} servers, by country.", riseupServers.length)
+      : t("RiseUp has no server available right now.");
+    $("riseupStatus").textContent = bestState.riseup.note;
+    renderRiseup();
+    measureBest("riseup");
+  } catch (e) {
+    riseupServers = [];
+    $("riseupStatus").classList.add("err");
+    $("riseupStatus").textContent = String(e);
+  }
+  gateBusy.riseup = false; syncGateAgain();
+}
+function renderRiseup() {
+  const added = new Set(state.settings.configs.map(c => c.name));
+  const query = foldText($("riseupQuery").value.trim());
+  const best = bestRowOf("riseup");
+  const shown = orderRows("riseup", riseupServers).filter(s => riseupMatches(s, query));
+  $("riseupBestRow").hidden = !riseupServers.length;
+  $("riseupBest").hidden = !bestRowOf("riseup", true);
+  $("riseupBest").disabled = false;
+  $("riseupFilters").hidden = !riseupServers.length;
+  $("riseupList").hidden = !riseupServers.length;
+  if (riseupServers.length && !shown.length) {
+    $("riseupList").innerHTML = `<div class="item"><div class="grow empty">${esc(t("No server matches this filter."))}</div></div>`;
+    return;
+  }
+  $("riseupList").innerHTML = shown.map(s => `<div class="item">
+    <div class="avatar">${esc(s.country)}</div>
+    <div class="grow">
+      <div class="title">${esc(regionName(s.country, s.city))} · ${esc(s.host)}<span class="badge proto">${esc(s.proto)}</span>${bestBadges("riseup", s, best)}</div>
+      <div class="sub">${esc(s.ip)} · ${esc(t("Port {0}", s.port))}</div>
+    </div>
+    <button type="button" class="small" ${added.has(s.name) ? "disabled" : ""} data-id="${esc(s.id)}" onclick="addRiseup(this)">${esc(added.has(s.name) ? t("Added") : t("Add"))}</button>
+  </div>`).join("");
+}
+async function addRiseup(btn) {
+  btn.disabled = true;
+  btn.textContent = t("Adding…");
+  try {
+    await vsRiseupAdd(btn.dataset.id);
+    btn.textContent = t("Added");
+    refresh();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = t("Add");
+    $("riseupStatus").classList.add("err");
+    $("riseupStatus").textContent = String(e);
+  }
+}
+// ---------- find the best server (latency) ----------
+// Each tab can measure the latency of its nearest servers and mark the best one.
+// ms: latency by row (the gateway host for RiseUp, the server id for VPN Gate);
+// run numbers the measurements, so a late answer is dropped; note is the status
+// text of the list, shown again when the measuring ends.
+const bestStorage = { gate: "bestGate", riseup: "bestRiseup" };
+const bestKey = { gate: s => s.id, riseup: s => s.host };
+const bestState = { gate: { ms: {}, run: 0, note: "" }, riseup: { ms: {}, run: 0, note: "" } };
+function storedFlag(tab) { try { return localStorage.getItem(bestStorage[tab]) === "1"; } catch (e) { return false; } }
+function storeFlag(tab, on) { try { localStorage.setItem(bestStorage[tab], on ? "1" : "0"); } catch (e) {} }
+const bestOn = { gate: storedFlag("gate"), riseup: storedFlag("riseup") };
+function bestRows(tab) { return tab === "gate" ? gateServers : riseupServers; }
+// The rows with a measured latency come first, fastest first; the others keep their order.
+function orderRows(tab, rows) {
+  const b = bestState[tab], key = bestKey[tab];
+  if (!bestOn[tab] || !Object.keys(b.ms).length) return rows;
+  const measured = rows.filter(s => b.ms[key(s)] !== undefined);
+  measured.sort((x, y) => b.ms[key(x)] - b.ms[key(y)]);
+  return measured.concat(rows.filter(s => b.ms[key(s)] === undefined));
+}
+// The best row has the lowest latency. Between rows with the same latency (the
+// two protocols of one RiseUp gateway) the UDP row wins, as it is the one added.
+// With skipAdded, the servers already in the VPN list are left out (what "Add best server" adds).
+function bestRowOf(tab, skipAdded) {
+  if (!bestOn[tab]) return null;
+  const b = bestState[tab], key = bestKey[tab];
+  const added = skipAdded ? new Set(state.settings.configs.map(c => c.name)) : null;
+  let best = null;
+  for (const s of bestRows(tab)) {
+    const v = b.ms[key(s)];
+    if (v === undefined || (added && added.has(s.name))) continue;
+    if (!best || v < b.ms[key(best)] || (v === b.ms[key(best)] && s.proto === "udp" && best.proto !== "udp")) best = s;
+  }
+  return best;
+}
+// The latency and the "Best" badge of a row, shown while the checkbox is on.
+function bestBadges(tab, s, best) {
+  const v = bestOn[tab] ? bestState[tab].ms[bestKey[tab](s)] : undefined;
+  if (v === undefined) return "";
+  return `<span class="badge">${esc(t("{0} ms", v))}</span>` + (best === s ? `<span class="badge">${esc(t("Best"))}</span>` : "");
+}
+function renderTab(tab) { if (tab === "gate") renderGate(); else renderRiseup(); }
+// Measures the servers of a tab when its checkbox is on, and shows the result.
+// With the checkbox off, the list goes back to its normal order.
+async function measureBest(tab) {
+  const b = bestState[tab], run = ++b.run;
+  const status = $(tab === "gate" ? "gateStatus" : "riseupStatus");
+  b.ms = {};
+  if (!bestRows(tab).length) { renderTab(tab); return; }
+  status.classList.remove("err");
+  if (!bestOn[tab]) { status.textContent = b.note; renderTab(tab); return; }
+  status.textContent = t("Measuring latency…");
+  renderTab(tab);
+  let results;
+  try {
+    results = await (tab === "gate" ? vsVpnGateBest() : vsRiseupBest());
+  } catch (e) {
+    if (run === b.run) { status.classList.add("err"); status.textContent = String(e); }
+    return;
+  }
+  if (run !== b.run) return;
+  for (const r of results) if (r.ms > 0) b.ms[r.id] = r.ms;
+  if (Object.keys(b.ms).length) {
+    status.textContent = b.note;
+  } else {
+    status.classList.add("err");
+    status.textContent = t("Could not measure the latency of any server.");
+  }
+  renderTab(tab);
+}
+function toggleBest(tab, on) {
+  bestOn[tab] = on;
+  storeFlag(tab, on);
+  measureBest(tab);
+}
+// "Add best server" adds the best row the way the Add button of that row does.
+async function addBestGate() {
+  const best = bestRowOf("gate", true);
+  if (!best) return;
+  $("gateBest").disabled = true;
+  try {
+    await vsVpnGateAdd(best.id);
+    await refresh();
+    renderGate();
+  } catch (e) {
+    $("gateBest").disabled = false;
+    $("gateStatus").classList.add("err");
+    $("gateStatus").textContent = String(e);
+  }
+}
+async function addBestRiseup() {
+  const best = bestRowOf("riseup", true);
+  if (!best) return;
+  $("riseupBest").disabled = true;
+  try {
+    await vsRiseupAdd(best.id);
+    await refresh();
+    renderRiseup();
+  } catch (e) {
+    $("riseupBest").disabled = false;
+    $("riseupStatus").classList.add("err");
+    $("riseupStatus").textContent = String(e);
+  }
+}
+
 let about = null;
 (async () => {
   try { about = await vsAbout(); renderTexts(); } catch (e) {}
@@ -748,6 +976,8 @@ if (LINUX) {
   $("aPath").readOnly = true;
 }
 
+$("gateBestOn").checked = bestOn.gate;
+$("riseupBestOn").checked = bestOn.riseup;
 renderTexts();
 refresh(); refreshLog();
 setInterval(refresh, 1000);

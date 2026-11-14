@@ -109,6 +109,15 @@ class Store private constructor(ctx: Context) {
         get() = prefs.getBoolean("updateCheck", true)
         set(v) = prefs.edit().putBoolean("updateCheck", v).apply()
 
+    /** "Find the best server" checkboxes of the two search dialogs. */
+    var bestGate: Boolean
+        get() = prefs.getBoolean("bestGate", false)
+        set(v) = prefs.edit().putBoolean("bestGate", v).apply()
+
+    var bestRiseUp: Boolean
+        get() = prefs.getBoolean("bestRiseUp", false)
+        set(v) = prefs.edit().putBoolean("bestRiseUp", v).apply()
+
     fun configs(): List<String> =
         dir.listFiles { f -> f.name.endsWith(".conf") || f.name.endsWith(".ovpn") }.orEmpty()
             .map { it.name.substringBeforeLast('.') }.sorted()

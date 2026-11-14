@@ -341,6 +341,7 @@ class MainActivity : Activity() {
         }
         addView(button(T("Import file…")) { pickFile() }, lp(top = 10))
         addView(button(T("Search VPN Gate…")) { searchVpnGate() }, lp(top = 6))
+        addView(button(T("Search RiseUp…")) { searchRiseUp() }, lp(top = 6))
         hint(T("WireGuard (.conf) and OpenVPN (.ovpn) files are supported."))
     }
 
@@ -467,15 +468,23 @@ class MainActivity : Activity() {
         var all = listOf<Native.GateServer>()
         var servers = listOf<Native.GateServer>()
         var proto = ""
+        var note = ""
+        var ms = emptyMap<String, Int>()
+        var best: Native.GateServer? = null
+        var addable: Native.GateServer? = null
+        var gen = 0
         val status = text(T("Searching for servers…"), 13f, muted)
         val none = text(T("No server matches this filter."), 13f, muted).apply { visibility = View.GONE }
+        lateinit var bestBox: CheckBox
+        lateinit var addBest: Button
         val adapter = object : BaseAdapter() {
             override fun getCount() = servers.size
             override fun getItem(i: Int) = servers[i]
             override fun getItemId(i: Int) = i.toLong()
-            override fun getView(i: Int, reuse: View?, parent: ViewGroup): View = gateRow(servers[i]) {
-                notifyDataSetChanged()
-            }
+            override fun getView(i: Int, reuse: View?, parent: ViewGroup): View =
+                gateRow(servers[i], badgeText(ms[servers[i].id], servers[i].id == best?.id)) {
+                    notifyDataSetChanged()
+                }
         }
         val query = EditText(this).apply {
             hint = T("Search country…")
@@ -487,9 +496,47 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
         fun applyFilters() {
-            servers = all.filter { VpnGate.matches(it, query.text.toString(), proto) }
+            best = bestOf(all, ms, { it.id }, { it.proto == "udp" })
+            addable = bestOf(all.filter { it.name !in store.configs() }, ms, { it.id }, { it.proto == "udp" })
+            servers = measuredFirst(all, ms) { it.id }.filter { VpnGate.matches(it, query.text.toString(), proto) }
             none.visibility = if (all.isNotEmpty() && servers.isEmpty()) View.VISIBLE else View.GONE
+            bestBox.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+            addBest.visibility = if (addable == null) View.GONE else View.VISIBLE
+            addBest.isEnabled = addable != null
             adapter.notifyDataSetChanged()
+        }
+        // With the checkbox on, measures the servers; with it off, the list goes back to its order.
+        fun measure() {
+            val g = ++gen
+            ms = emptyMap()
+            applyFilters()
+            if (all.isEmpty()) return
+            status.setTextColor(muted)
+            if (!store.bestGate) {
+                status.text = note
+                return
+            }
+            status.text = T("Measuring latency…")
+            thread {
+                val result = runCatching { Native.vpnGateBest() }
+                main.post {
+                    if (g != gen || isFinishing || isDestroyed) return@post
+                    result.onSuccess { list ->
+                        ms = list.filter { it.ms > 0 }.associate { it.id to it.ms }
+                        if (ms.isEmpty()) {
+                            status.text = T("Could not measure the latency of any server.")
+                            status.setTextColor(errColor)
+                        } else {
+                            status.setTextColor(muted)
+                            status.text = note
+                        }
+                        applyFilters()
+                    }.onFailure { e ->
+                        status.text = e.message ?: e.toString()
+                        status.setTextColor(errColor)
+                    }
+                }
+            }
         }
         for ((label, value) in listOf(T("All protocols") to "", "TCP" to "tcp", "UDP" to "udp")) {
             protocols.addView(android.widget.RadioButton(this).apply {
@@ -507,32 +554,53 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
             override fun afterTextChanged(s: Editable?) = applyFilters()
         })
+        bestBox = CheckBox(this).apply {
+            text = T("Find the best server")
+            visibility = View.GONE
+            isChecked = store.bestGate
+            setOnCheckedChangeListener { _, on ->
+                store.bestGate = on
+                measure()
+            }
+        }
+        addBest = button(T("Add best server")) {
+            val s = addable ?: return@button
+            addBest.isEnabled = false
+            addVpnGate(s) { applyFilters() }
+        }.apply { visibility = View.GONE }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(4), dp(16), 0)
             addView(text(T("VPN Gate servers are run by volunteers. An operator can see traffic that is not encrypted, and servers may keep logs, so avoid them for banking and important accounts. Some may also be offline: if one does not connect, try another."), 12.5f, muted))
             addView(status, lp(top = 8))
+            addView(bestBox, lp(top = 4))
+            addView(addBest, lp(top = 4))
             addView(query, lp(top = 4))
             addView(protocols, lp())
             addView(none, lp(top = 4))
             addView(ListView(context).apply { this.adapter = adapter }, lp(h = dp(320), top = 4))
         }
-        dialog().setTitle(T("VPN Gate servers")).setView(box)
+        val dlg = dialog().setTitle(T("VPN Gate servers")).setView(box)
             .setPositiveButton(T("Close"), null).create().showDirected()
+        dlg.setOnDismissListener { gen++ }
 
+        val searchGen = gen
         thread {
             val result = runCatching { VpnGate.search(this) }
             main.post {
+                if (searchGen != gen || isFinishing || isDestroyed) return@post
                 result.onSuccess { r ->
                     all = r.servers
                     query.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
                     protocols.visibility = query.visibility
-                    applyFilters()
-                    status.text = when {
+                    note = when {
                         all.isEmpty() -> T("VPN Gate has no server available right now.")
                         r.near.isNotEmpty() -> T("Closest to {0} first.", VpnGate.countryName(r.near, r.near))
                         else -> T("Your country was not detected: the best rated servers come first.")
                     }
+                    status.setTextColor(muted)
+                    status.text = note
+                    measure()
                 }.onFailure { e ->
                     status.text = e.message ?: e.toString()
                 }
@@ -540,28 +608,245 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun gateRow(s: Native.GateServer, changed: () -> Unit): View = row {
+    private fun gateRow(s: Native.GateServer, badge: String, changed: () -> Unit): View = row {
         setPadding(0, dp(6), 0, dp(6))
         val info = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             addView(text("${VpnGate.countryName(s.country, s.countryName)} · ${s.proto.uppercase()}", bold = true))
             addView(text(s.host, 12.5f, muted))
             addView(text(T("Port {0} · {1} Mbps · {2} sessions", s.port, "%.1f".format(s.speed / 1e6), s.sessions), 12.5f, muted))
+            if (badge.isNotEmpty()) addView(text(badge, 12.5f, accent))
         }
         addView(info, lp(0, weight = 1f))
         val added = s.name in store.configs()
-        addView(rowButton(if (added) T("Added") else T("Add")) {
-            try {
-                val config = Native.vpnGateConfig(s.id)
-                Native.planOpenVpn(config)
-                val name = store.save(s.name, config, "ovpn")
-                if (store.configs().size == 1) store.active = name
-                render()
-                changed()
-            } catch (e: Native.GoError) {
-                message(e.message ?: "")
+        addView(rowButton(if (added) T("Added") else T("Add")) { addVpnGate(s, changed) }.apply { isEnabled = !added })
+    }
+
+    /** Adds a VPN Gate server as its row's Add button does; [done] runs afterwards, also when adding fails. */
+    private fun addVpnGate(s: Native.GateServer, done: () -> Unit) {
+        try {
+            val config = Native.vpnGateConfig(s.id)
+            Native.planOpenVpn(config)
+            val name = store.save(s.name, config, "ovpn")
+            if (store.configs().size == 1) store.active = name
+            render()
+        } catch (e: Native.GoError) {
+            message(e.message ?: "")
+        }
+        done()
+    }
+
+    /** Measured rows first, the fastest first; the others keep their order. */
+    private fun <E> measuredFirst(rows: List<E>, ms: Map<String, Int>, key: (E) -> String): List<E> {
+        if (ms.isEmpty()) return rows
+        return rows.filter { key(it) in ms }.sortedBy { ms.getValue(key(it)) } + rows.filter { key(it) !in ms }
+    }
+
+    /** The row with the lowest latency; between equal ones the UDP row wins, as it is the one added. */
+    private fun <E> bestOf(rows: List<E>, ms: Map<String, Int>, key: (E) -> String, udp: (E) -> Boolean): E? =
+        rows.filter { key(it) in ms }
+            .minWithOrNull(compareBy<E> { ms.getValue(key(it)) }.thenBy { if (udp(it)) 0 else 1 })
+
+    /** The badges of a measured row: its latency, and "Best" on the best row. */
+    private fun badgeText(ms: Int?, best: Boolean): String =
+        listOfNotNull(ms?.let { T("{0} ms", it) }, if (best) T("Best") else null).joinToString(" · ")
+
+    // ---- RiseUp -------------------------------------------------------------
+
+    private fun searchRiseUp() {
+        var all = listOf<Native.RiseUpServer>()
+        var servers = listOf<Native.RiseUpServer>()
+        var note = ""
+        var ms = emptyMap<String, Int>()
+        var best: Native.RiseUpServer? = null
+        var addable: Native.RiseUpServer? = null
+        var gen = 0
+        val status = text(T("Searching for servers…"), 13f, muted)
+        val none = text(T("No server matches this filter."), 13f, muted).apply { visibility = View.GONE }
+        lateinit var bestBox: CheckBox
+        lateinit var addBest: Button
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = servers.size
+            override fun getItem(i: Int) = servers[i]
+            override fun getItemId(i: Int) = i.toLong()
+            override fun getView(i: Int, reuse: View?, parent: ViewGroup): View =
+                riseupRow(servers[i], badgeText(ms[servers[i].host], servers[i].id == best?.id)) {
+                    notifyDataSetChanged()
+                }
+        }
+        val query = EditText(this).apply {
+            hint = T("Search country or city…")
+            setSingleLine()
+            visibility = View.GONE
+        }
+        fun applyFilters() {
+            best = bestOf(all, ms, { it.host }, { it.proto == "udp" })
+            // A server being added stays the target (its button shows "Adding…") so a second
+            // tap cannot jump to the next-best server by accident.
+            addable = bestOf(all.filter { it.name !in store.configs() }, ms, { it.host }, { it.proto == "udp" })
+            servers = measuredFirst(all, ms) { it.host }.filter { RiseUp.matches(it, query.text.toString()) }
+            none.visibility = if (all.isNotEmpty() && servers.isEmpty()) View.VISIBLE else View.GONE
+            bestBox.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+            addBest.visibility = if (addable == null) View.GONE else View.VISIBLE
+            addBest.text = if (addable?.let { it.id in riseupPending } == true) T("Adding…") else T("Add best server")
+            addBest.isEnabled = addable != null && addable?.id !in riseupPending
+            adapter.notifyDataSetChanged()
+        }
+        // With the checkbox on, measures the gateways; with it off, the list goes back to its order.
+        fun measure() {
+            val g = ++gen
+            ms = emptyMap()
+            applyFilters()
+            if (all.isEmpty()) return
+            status.setTextColor(muted)
+            if (!store.bestRiseUp) {
+                status.text = note
+                return
             }
-        }.apply { isEnabled = !added })
+            status.text = T("Measuring latency…")
+            thread {
+                val result = runCatching { Native.riseupBest() }
+                main.post {
+                    if (g != gen || isFinishing || isDestroyed) return@post
+                    result.onSuccess { list ->
+                        ms = list.filter { it.ms > 0 }.associate { it.id to it.ms }
+                        if (ms.isEmpty()) {
+                            status.text = T("Could not measure the latency of any server.")
+                            status.setTextColor(errColor)
+                        } else {
+                            status.setTextColor(muted)
+                            status.text = note
+                        }
+                        applyFilters()
+                    }.onFailure { e ->
+                        status.text = e.message ?: e.toString()
+                        status.setTextColor(errColor)
+                    }
+                }
+            }
+        }
+        query.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = applyFilters()
+        })
+        bestBox = CheckBox(this).apply {
+            text = T("Find the best server")
+            visibility = View.GONE
+            isChecked = store.bestRiseUp
+            setOnCheckedChangeListener { _, on ->
+                store.bestRiseUp = on
+                measure()
+            }
+        }
+        addBest = button(T("Add best server")) {
+            val s = addable ?: return@button
+            addRiseUp(s, addBest, T("Add best server")) { applyFilters() }
+        }.apply { visibility = View.GONE }
+        lateinit var again: Button
+        fun search() {
+            again.isEnabled = false
+            query.visibility = View.GONE
+            status.setTextColor(muted)
+            status.text = T("Searching for servers…")
+            val g = ++gen
+            ms = emptyMap()
+            applyFilters()
+            thread {
+                val result = runCatching { RiseUp.search() }
+                main.post {
+                    if (g != gen || isFinishing || isDestroyed) return@post
+                    again.isEnabled = true
+                    result.onSuccess { r ->
+                        all = r.servers
+                        query.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+                        note = if (all.isEmpty()) {
+                            T("RiseUp has no server available right now.")
+                        } else {
+                            T("{0} servers, by country.", all.size)
+                        }
+                        status.setTextColor(muted)
+                        status.text = note
+                        measure()
+                    }.onFailure { e ->
+                        all = emptyList()
+                        applyFilters()
+                        status.text = e.message ?: e.toString()
+                    }
+                }
+            }
+        }
+        again = button(T("Search again")) { search() }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(4), dp(16), 0)
+            addView(status, lp(top = 8))
+            addView(again, lp(top = 8))
+            addView(bestBox, lp(top = 4))
+            addView(addBest, lp(top = 4))
+            addView(query, lp(top = 4))
+            addView(none, lp(top = 4))
+            addView(ListView(context).apply { this.adapter = adapter }, lp(h = dp(320), top = 4))
+        }
+        val dlg = dialog().setTitle(T("RiseUp")).setView(box)
+            .setPositiveButton(T("Close"), null).create().showDirected()
+        dlg.setOnDismissListener { gen++ }
+        search()
+    }
+
+    // Servers being added right now: the list can be rebuilt (filter, rotation) while
+    // the certificate downloads, and a second tap would add the same server again.
+    private val riseupPending = mutableSetOf<String>()
+
+    private fun riseupRow(s: Native.RiseUpServer, badge: String, changed: () -> Unit): View = row {
+        setPadding(0, dp(6), 0, dp(6))
+        val info = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val place = listOf(RiseUp.countryName(s.country), s.city, s.proto.uppercase())
+                .filter { it.isNotEmpty() }.joinToString(" · ")
+            addView(text(place, bold = true))
+            addView(text("${s.host} · ${s.ip} · ${T("Port {0}", s.port)}", 12.5f, muted))
+            if (badge.isNotEmpty()) addView(text(badge, 12.5f, accent))
+        }
+        addView(info, lp(0, weight = 1f))
+        val pending = s.id in riseupPending
+        val added = s.name in store.configs()
+        lateinit var add: Button
+        add = rowButton(if (added) T("Added") else if (pending) T("Adding…") else T("Add")) {
+            addRiseUp(s, add, T("Add"), changed)
+        }.apply { isEnabled = !added && !pending }
+        addView(add)
+    }
+
+    /** Adds a RiseUp server as its row's Add button does. [add] shows the progress; [idle] is its text when it can be pressed again. */
+    private fun addRiseUp(s: Native.RiseUpServer, add: Button, idle: String, changed: () -> Unit) {
+        add.isEnabled = false
+        add.text = T("Adding…")
+        riseupPending.add(s.id)
+        thread {
+            val result = runCatching { RiseUp.config(s.id) }
+            main.post {
+                riseupPending.remove(s.id)
+                if (isFinishing || isDestroyed) return@post
+                result.onSuccess { c ->
+                    try {
+                        Native.planOpenVpn(c.config)
+                        val name = store.save(c.name, c.config, "ovpn")
+                        if (store.configs().size == 1) store.active = name
+                        render()
+                        changed()
+                    } catch (e: Native.GoError) {
+                        add.isEnabled = true
+                        add.text = idle
+                        message(e.message ?: "")
+                    }
+                }.onFailure { e ->
+                    add.isEnabled = true
+                    add.text = idle
+                    message(e.message ?: e.toString())
+                }
+            }
+        }
     }
 
     // ---- choosing apps ------------------------------------------------------

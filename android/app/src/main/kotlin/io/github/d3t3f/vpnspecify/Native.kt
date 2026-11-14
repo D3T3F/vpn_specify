@@ -21,6 +21,9 @@ object Native {
         text: String? = null,
         gateList: String? = null,
         gateHome: String? = null,
+        riseupEip: String? = null,
+        riseupCert: String? = null,
+        riseupCa: String? = null,
     ): Any? {
         val req = JSONObject().put("method", method)
         if (config != null) req.put("config", config)
@@ -28,6 +31,9 @@ object Native {
         if (text != null) req.put("text", text)
         if (gateList != null) req.put("gateList", gateList)
         if (gateHome != null) req.put("gateHome", gateHome)
+        if (riseupEip != null) req.put("riseupEIP", riseupEip)
+        if (riseupCert != null) req.put("riseupCert", riseupCert)
+        if (riseupCa != null) req.put("riseupCA", riseupCa)
         val reply = JSONObject(String(call(req.toString().toByteArray()), Charsets.UTF_8))
         if (reply.has("error")) throw GoError(reply.getString("error"))
         return reply.opt("result")
@@ -114,6 +120,57 @@ object Native {
 
     /** The configuration of a server of the last list. */
     fun vpnGateConfig(id: String): String = request("vpnGateConfig", text = id) as String
+
+    /** Latency of a server; [ms] is -1 when it could not be measured. */
+    data class Latency(val id: String, val ms: Int)
+
+    private fun latencies(a: JSONArray): List<Latency> =
+        List(a.length()) {
+            val o = a.getJSONObject(it)
+            Latency(o.getString("id"), o.getInt("ms"))
+        }
+
+    /** Measures the first servers of the last VPN Gate list; throws [GoError]. Blocking: not on the main thread. */
+    fun vpnGateBest(): List<Latency> = latencies(request("vpnGateBest") as JSONArray)
+
+    data class RiseUpServer(
+        val id: String,
+        val name: String,
+        val host: String,
+        val ip: String,
+        val country: String,
+        val city: String,
+        val proto: String,
+        val port: Int,
+    )
+
+    data class RiseUpList(val servers: List<RiseUpServer>)
+
+    /** Reads the gateway list of RiseUp; throws [GoError]. */
+    fun riseupList(eip: String): RiseUpList {
+        val o = request("riseupList", riseupEip = eip) as JSONObject
+        val a = o.optJSONArray("servers") ?: JSONArray()
+        return RiseUpList(
+            List(a.length()) {
+                val s = a.getJSONObject(it)
+                RiseUpServer(
+                    s.getString("id"), s.getString("name"), s.getString("host"), s.getString("ip"),
+                    s.optString("country"), s.getString("city"), s.getString("proto"), s.getInt("port"),
+                )
+            },
+        )
+    }
+
+    data class RiseUpConfig(val config: String, val name: String)
+
+    /** Builds the configuration of a server of the last list from the downloaded certificate and CA; throws [GoError]. */
+    fun riseupConfig(id: String, cert: String, ca: String): RiseUpConfig {
+        val o = request("riseupConfig", text = id, riseupCert = cert, riseupCa = ca) as JSONObject
+        return RiseUpConfig(o.getString("config"), o.getString("name"))
+    }
+
+    /** Measures the gateways of the last RiseUp list (by host); throws [GoError]. Blocking: not on the main thread. */
+    fun riseupBest(): List<Latency> = latencies(request("riseupBest") as JSONArray)
 
     fun appendLog(line: String) {
         request("appendLog", text = line)

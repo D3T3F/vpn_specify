@@ -337,7 +337,7 @@ App eingebaut, daher nutzt die App keinen Proxy: Der gesamte TCP- und UDP-Verkeh
 der gewählten Apps, auch Sprache, läuft durch den Tunnel, ohne Root. Der Rest des
 Telefons bleibt in Ihrem normalen Netzwerk.
 
-1. **Datei importieren…**: Wählen Sie eine WireGuard-`.conf` oder eine OpenVPN-`.ovpn`. Sie können auch mit **In VPN Gate suchen…** einen öffentlichen Server hinzufügen.
+1. **Datei importieren…**: Wählen Sie eine WireGuard-`.conf` oder eine OpenVPN-`.ovpn`. Sie können auch mit **In VPN Gate suchen…** einen öffentlichen Server hinzufügen. Im selben Dialog gibt es außerdem einen Reiter **RiseUp** mit RiseupVPN-Servern. Jeder Reiter hat die Option **Besten Server suchen**, die die Latenz der nächstgelegenen Server misst.
 2. **Apps auswählen…**: Markieren Sie die Apps, die das VPN nutzen, zum Beispiel Discord.
 3. **Verbinden**, und bestätigen Sie beim ersten Mal die VPN-Berechtigung von Android.
 

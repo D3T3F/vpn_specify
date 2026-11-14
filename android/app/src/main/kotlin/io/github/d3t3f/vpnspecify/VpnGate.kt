@@ -64,7 +64,7 @@ object VpnGate {
     /** Lowercase without accents, so "Croacia" finds "Croácia". */
     private val accents = Regex("\\p{Mn}+")
 
-    private fun fold(s: String): String =
+    internal fun fold(s: String): String =
         Normalizer.normalize(s, Normalizer.Form.NFD).replace(accents, "").lowercase(Locale.ROOT)
 
     /**

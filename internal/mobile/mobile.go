@@ -5,13 +5,17 @@
 package mobile
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"vpn_specify/internal/i18n"
+	"vpn_specify/internal/latency"
+	"vpn_specify/internal/riseup"
 	"vpn_specify/internal/tunnel"
 	"vpn_specify/internal/vpngate"
 )
@@ -25,6 +29,10 @@ type Request struct {
 	// VPN Gate: the app downloads (see VpnGate.kt) and Go reads the answers
 	GateList string `json:"gateList,omitempty"`
 	GateHome string `json:"gateHome,omitempty"`
+	// RiseUp: the app downloads (see RiseUp.kt) and Go reads the answers
+	RiseupEIP  string `json:"riseupEIP,omitempty"`  // gateway list (eip-service.json)
+	RiseupCert string `json:"riseupCert,omitempty"` // client key and certificate, PEM
+	RiseupCA   string `json:"riseupCA,omitempty"`   // CA certificate, PEM
 }
 
 var (
@@ -33,6 +41,9 @@ var (
 
 	gateMu   sync.Mutex
 	gateList *vpngate.List
+
+	riseupMu   sync.Mutex
+	riseupList *riseup.List
 )
 
 func init() {
@@ -96,6 +107,28 @@ func dispatch(r Request) (any, error) {
 		gateMu.Unlock()
 		_, cfg, err := l.Config(r.Text)
 		return string(cfg), err
+	case "riseupList":
+		l, err := riseup.Build([]byte(r.RiseupEIP))
+		if err != nil {
+			return nil, err
+		}
+		riseupMu.Lock()
+		riseupList = l
+		riseupMu.Unlock()
+		return l, nil
+	case "riseupConfig":
+		riseupMu.Lock()
+		l := riseupList
+		riseupMu.Unlock()
+		s, cfg, err := l.ConfigFromData(r.Text, []byte(r.RiseupCert), []byte(r.RiseupCA))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"config": string(cfg), "name": s.Name}, nil
+	case "vpnGateBest":
+		return vpnGateBest()
+	case "riseupBest":
+		return riseupBest()
 	case "appendLog":
 		log.Print(r.Text)
 		return nil, nil
@@ -131,6 +164,38 @@ func dispatch(r Request) (any, error) {
 		return strings.Join(ring.lines(), "\n"), nil
 	}
 	return nil, fmt.Errorf("unknown method %q", r.Method)
+}
+
+// bestTimeout bounds the measurement of the servers for "Find the best server".
+const bestTimeout = 12 * time.Second
+
+// vpnGateBest measures the first servers of the last VPN Gate list.
+func vpnGateBest() ([]latency.Result, error) {
+	gateMu.Lock()
+	l := gateList
+	gateMu.Unlock()
+	if l == nil {
+		return nil, i18n.Error("this server is no longer on the list; search again")
+	}
+	return rankServers(l.Targets(16)), nil
+}
+
+// riseupBest measures the gateways of the last RiseUp list. There is no
+// geolocation on the phone: the list is short enough to measure all of it.
+func riseupBest() ([]latency.Result, error) {
+	riseupMu.Lock()
+	l := riseupList
+	riseupMu.Unlock()
+	if l == nil {
+		return nil, i18n.Error("this server is no longer on the list; search again")
+	}
+	return rankServers(l.Targets(nil, 20)), nil
+}
+
+func rankServers(targets []latency.Target) []latency.Result {
+	ctx, cancel := context.WithTimeout(context.Background(), bestTimeout)
+	defer cancel()
+	return latency.Rank(ctx, targets)
 }
 
 func start(r Request) error {

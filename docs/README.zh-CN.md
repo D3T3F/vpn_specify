@@ -289,7 +289,7 @@ vpn_specify status
 
 安装 `vpn_specify-<版本>-android-arm64.apk`(Android 8 或更高版本;出现提示时允许从此来源安装)。Android 内置按应用 VPN,因此应用不使用代理:所选应用的全部 TCP 和 UDP 流量(包括语音)都经过隧道,无需 root。手机的其余部分仍在您的普通网络上。
 
-1. **导入文件…**:选择 WireGuard `.conf` 或 OpenVPN `.ovpn`。 也可以通过**搜索 VPN Gate…**添加公共服务器。
+1. **导入文件…**:选择 WireGuard `.conf` 或 OpenVPN `.ovpn`。 也可以通过**搜索 VPN Gate…**添加公共服务器。同一对话框还有 **RiseUp** 标签页,列出 RiseupVPN 服务器。 每个标签页都有**查找最佳服务器**选项,用于测量最近服务器的延迟。
 2. **选择应用…**:勾选使用 VPN 的应用,例如 Discord。
 3. **连接**,并在首次时接受 Android 的 VPN 权限。
 

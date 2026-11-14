@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"vpn_specify/internal/i18n"
+	"vpn_specify/internal/latency"
 	"vpn_specify/internal/version"
 )
 
@@ -71,6 +72,28 @@ func (l *List) Config(id string) (*Server, []byte, error) {
 		}
 	}
 	return nil, nil, i18n.Error("this server is no longer on the list; search again")
+}
+
+// Targets returns the first limit servers of the list, in list order (nearest
+// country first). A TCP server is measured on its own port. A UDP server cannot
+// be measured by TCP, so it is measured on TCP 443, where many VPN Gate servers
+// also listen; if that fails, the server stays unmeasured.
+func (l *List) Targets(limit int) []latency.Target {
+	if l == nil {
+		return nil
+	}
+	var targets []latency.Target
+	for _, s := range l.Servers {
+		if len(targets) >= limit {
+			break
+		}
+		port := 443
+		if s.Proto == "tcp" {
+			port = s.Port
+		}
+		targets = append(targets, latency.Target{ID: s.ID, IP: s.IP, Ports: []int{port}})
+	}
+	return targets
 }
 
 var hostName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
