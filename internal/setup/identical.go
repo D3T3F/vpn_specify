@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -19,6 +20,9 @@ func sameContent(src fs.FS, name, dst string) (bool, error) {
 	dstInfo, err := os.Stat(dst)
 	if err != nil {
 		return false, err
+	}
+	if dstInfo.IsDir() { // a directory has no content to compare (its "size" depends on the OS)
+		return false, errors.New("destination is a directory")
 	}
 	if srcInfo.Size() != dstInfo.Size() {
 		return false, nil
