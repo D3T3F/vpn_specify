@@ -1,0 +1,442 @@
+# Publishes a release when a commit that changes VERSION lands on main.
+#
+# The build jobs pass their packages to the publish job as artifacts. Only the
+# publish job has write access, and it runs only when every package was built.
+# A push for a version that is already published does nothing.
+#
+# Manual runs (Actions > Release > Run workflow) build everything and upload
+# the packages as workflow artifacts. Publishing by hand requires dry_run to be
+# unchecked and the run to be on main.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build everything but do not publish (the packages are uploaded as workflow artifacts)'
+        type: boolean
+        default: true
+
+# Read-only by default; only the publish job asks for write access.
+permissions:
+  contents: read
+
+# One release at a time. Runs are queued, never cancelled, so a release in
+# progress is not stopped by a newer push. GitHub keeps only one pending run per
+# group: if two pushes arrive while a run is busy, the older pending one is
+# dropped (see docs/release-notes/README.md for how to re-run it).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Read the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      build: ${{ steps.version.outputs.build }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      # full history and tags: the release notes list the commits since the previous tag
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Check the version and whether it is already released
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          version=$(tr -d ' \t\r\n' < VERSION)
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=VERSION::invalid version '$version' (use the 1.2.3 format)"
+            exit 1
+          fi
+          tag="v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          # Pushes publish. Manual runs publish only when dry_run is unchecked.
+          want_publish=false
+          if [ "$EVENT_NAME" = "push" ] || [ "$DRY_RUN_INPUT" = "false" ]; then
+            want_publish=true
+          fi
+          if [ "$want_publish" = "true" ] && [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::publishing is only allowed from main (this run is on $REF)"
+            exit 1
+          fi
+
+          # Returns 0 if the API path exists, 1 if GitHub answers 404, and fails on any other error.
+          exists() {
+            if gh api "$1" > /dev/null 2> "$RUNNER_TEMP/gh-error.txt"; then
+              return 0
+            fi
+            if grep -q 'HTTP 404' "$RUNNER_TEMP/gh-error.txt"; then
+              return 1
+            fi
+            cat "$RUNNER_TEMP/gh-error.txt" >&2
+            exit 1
+          }
+
+          # The tag endpoint returns published releases only: a leftover draft does not count.
+          published=false
+          if exists "repos/$REPO/releases/tags/$tag"; then
+            published=true
+          fi
+          tag_exists=false
+          if exists "repos/$REPO/git/ref/tags/$tag"; then
+            tag_exists=true
+          fi
+
+          build=true
+          publish=$want_publish
+          if [ "$published" = "true" ]; then
+            publish=false
+            if [ "$EVENT_NAME" = "push" ]; then
+              # idempotent: a commit that repeats an already published version does nothing
+              echo "::notice::$tag is already released; skipping the build and the publish"
+              build=false
+            elif [ "$want_publish" = "true" ]; then
+              echo "::error::$tag is already released; choose a new version in VERSION"
+              exit 1
+            else
+              echo "::notice::$tag is already released; this dry run only builds the packages"
+            fi
+          elif [ "$tag_exists" = "true" ] && [ "$want_publish" = "true" ]; then
+            # a tag without a published release (e.g. after a failed run) is reused,
+            # but only at the commit being built
+            tag_commit=$(gh api "repos/$REPO/commits/$tag" --jq .sha)
+            if [ "$tag_commit" != "$SHA" ]; then
+              echo "::error::tag $tag already exists at commit $tag_commit, not at $SHA; delete the tag or choose a new version in VERSION"
+              exit 1
+            fi
+            echo "::notice::tag $tag exists at this commit without a published release; publishing it"
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "$tag: build=$build publish=$publish"
+
+      # The notes are shown in the app's "What's new". docs/release-notes/<version>.md
+      # is used when it exists; otherwise a list of the commits since the previous tag.
+      - name: Write the release notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/notes"
+          notes="$RUNNER_TEMP/notes/notes.md"
+          source_notes="docs/release-notes/$VERSION.md"
+          if [ -s "$source_notes" ]; then
+            cp "$source_notes" "$notes"
+            echo "release notes from $source_notes"
+          else
+            previous=$(git tag -l 'v*' --sort=-v:refname | grep -vx "$TAG" | head -n 1 || true)
+            if [ -n "$previous" ]; then range="$previous..HEAD"; else range="HEAD"; fi
+            echo "no $source_notes; generating the notes from the commits in $range"
+            {
+              echo "What's new in $VERSION"
+              echo
+              # commit subjects are shown as code so that they do not mention anyone
+              git log --no-merges -n 50 --format='- %s' "$range" | sed -E 's/@([A-Za-z0-9_-]+)/`@\1`/g'
+            } > "$notes"
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes/notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+      # bash on every system (Git Bash on Windows), so a failing command fails the step;
+      # all three must pass before anything is packaged
+      - name: Vet
+        shell: bash
+        run: go vet ./...
+      - name: Test
+        shell: bash
+        run: go test ./...
+
+  windows:
+    name: Windows package
+    needs: [prepare, test]
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      WINDIVERT_URL: https://github.com/basil00/WinDivert/releases/download/v2.2.2/WinDivert-2.2.2-A.zip
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+
+      # The installer ships WinDivert.dll and WinDivert64.sys (the x64 files of
+      # the release). The step fails unless both match the pinned SHA-256 values.
+      # The values are those of the copies in windivert\ used for the 1.4.1 build.
+      - name: Fetch WinDivert 2.2.2 and verify it
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinned = @{
+            'WinDivert.dll'   = 'C1E060EE19444A259B2162F8AF0F3FE8C4428A1C6F694DCE20DE194AC8D7D9A2'
+            'WinDivert64.sys' = '8DA085332782708D8767BCACE5327A6EC7283C17CFB85E40B03CD2323A90DDC2'
+          }
+          $zip = Join-Path $env:RUNNER_TEMP 'WinDivert.zip'
+          $dir = Join-Path $env:RUNNER_TEMP 'WinDivert'
+          Invoke-WebRequest -Uri $env:WINDIVERT_URL -OutFile $zip -UseBasicParsing
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          New-Item -ItemType Directory -Force windivert | Out-Null
+          foreach ($name in $pinned.Keys) {
+            $found = @(Get-ChildItem -Path $dir -Recurse -File -Filter $name | Where-Object { $_.Directory.Name -eq 'x64' })
+            if ($found.Count -ne 1) { throw "${name}: expected one x64 file in the release, found $($found.Count)" }
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $found[0].FullName).Hash
+            if ($hash -ne $pinned[$name]) { throw "${name} SHA-256 is $hash, expected $($pinned[$name])" }
+            Copy-Item -LiteralPath $found[0].FullName -Destination (Join-Path 'windivert' $name)
+            Write-Host "${name}: SHA-256 verified"
+          }
+
+      - name: Build the Windows package
+        shell: pwsh
+        run: ./scripts/build.ps1 -Dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-windows
+          path: dist/vpn_specify-${{ needs.prepare.outputs.version }}-win64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  unix:
+    name: Linux and macOS packages
+    needs: [prepare, test]
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+      # build.sh instead of build.ps1: the PowerShell script packs with the Windows tar
+      - name: Build the packages
+        shell: bash
+        run: ./scripts/build.sh -linux -mac
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-unix
+          path: |
+            dist/vpn_specify-${{ needs.prepare.outputs.version }}-linux-amd64.tar.gz
+            dist/vpn_specify-${{ needs.prepare.outputs.version }}-linux-arm64.tar.gz
+            dist/vpn_specify-${{ needs.prepare.outputs.version }}-macos-arm64.tar.gz
+            dist/vpn_specify-${{ needs.prepare.outputs.version }}-macos-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Android package
+    needs: [prepare, test]
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PUBLISH: ${{ needs.prepare.outputs.publish }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      # the NDK version used by android/app/build.gradle.kts (ndkVersion)
+      - name: Install the NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          # yes() gets SIGPIPE when sdkmanager stops reading: that is not an error here
+          set +o pipefail
+          yes | "$sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$sdkmanager" --install "ndk;27.1.12297006" > /dev/null
+          test -d "$ANDROID_HOME/ndk/27.1.12297006"
+
+      # Only a publish needs the release key. Without it the run fails instead of
+      # publishing an APK signed with the debug key, which Android would not
+      # accept as an update. A dry run always builds a debug-signed APK for testing.
+      - name: Restore the signing key
+        id: signing
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] \
+            || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::error::the Android signing secrets are missing (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD); not publishing a debug-signed APK"
+            exit 1
+          fi
+          for value in "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS"; do
+            echo "::add-mask::$value"
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/vpn_specify-release.keystore
+          # keystore.properties is read as Java properties: backslashes must be escaped
+          escape() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+          {
+            echo "storeFile=vpn_specify-release.keystore"
+            echo "storePassword=$(escape "$ANDROID_KEYSTORE_PASSWORD")"
+            echo "keyAlias=$(escape "$ANDROID_KEY_ALIAS")"
+            echo "keyPassword=$(escape "$ANDROID_KEY_PASSWORD")"
+          } > android/keystore.properties
+
+      - name: Note the debug signing of a dry run
+        if: env.PUBLISH != 'true'
+        shell: bash
+        run: |
+          echo "::warning::dry run, the APK is signed with the DEBUG key and must not be published"
+
+      # Gradle builds the Go library (cmd/libvpn_specify) itself, with the NDK
+      - name: Build the APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          sh ./gradlew assembleRelease --console=plain
+
+      - name: Copy the APK to dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/vpn_specify-$VERSION-android-arm64.apk"
+
+      - name: Remove the signing key
+        if: always()
+        shell: bash
+        run: rm -f android/keystore.properties android/*.keystore
+
+      # a debug-signed dry run gets its own artifact name, so it is not mistaken for a release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.PUBLISH == 'true' && 'release-android' || 'release-android-debug-signed' }}
+          path: dist/vpn_specify-${{ needs.prepare.outputs.version }}-android-arm64.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish the release
+    needs: [prepare, test, windows, unix, android]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - name: Download the packages and the notes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: assets
+
+      # The updater reads SHA256SUMS or SHA256SUMS.txt (sha256sum format) from the release
+      - name: Write SHA256SUMS.txt
+        shell: bash
+        working-directory: assets
+        run: |
+          set -euo pipefail
+          files=(
+            "vpn_specify-$VERSION-win64.zip"
+            "vpn_specify-$VERSION-linux-amd64.tar.gz"
+            "vpn_specify-$VERSION-linux-arm64.tar.gz"
+            "vpn_specify-$VERSION-macos-arm64.tar.gz"
+            "vpn_specify-$VERSION-macos-amd64.tar.gz"
+            "vpn_specify-$VERSION-android-arm64.apk"
+          )
+          for file in "${files[@]}"; do
+            if [ ! -s "$file" ]; then
+              echo "::error::missing package $file"
+              exit 1
+            fi
+          done
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # A leftover draft from an earlier failed run is deleted (never a published release).
+      - name: Delete a leftover draft for this tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids=$(gh api --paginate repos/$GH_REPO/releases --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id")
+          for id in $ids; do
+            echo "deleting the leftover draft release $id of $TAG"
+            gh api -X DELETE "repos/$GH_REPO/releases/$id"
+          done
+
+      # Created as a draft with every asset, then published, so that the updater
+      # never sees a release with missing files. Not a pre-release.
+      # The tag is created at the commit that was built (or reused, see prepare).
+      - name: Create the release with all assets, then publish it
+        shell: bash
+        working-directory: assets
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            "vpn_specify-$VERSION-win64.zip" \
+            "vpn_specify-$VERSION-linux-amd64.tar.gz" \
+            "vpn_specify-$VERSION-linux-arm64.tar.gz" \
+            "vpn_specify-$VERSION-macos-arm64.tar.gz" \
+            "vpn_specify-$VERSION-macos-amd64.tar.gz" \
+            "vpn_specify-$VERSION-android-arm64.apk" \
+            SHA256SUMS.txt
+          gh release edit "$TAG" --draft=false

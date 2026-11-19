@@ -34,6 +34,11 @@
   SDK and NDK. Signed with android\keystore.properties if it exists; otherwise
   with the debug key, which is only for testing.
 
+.PARAMETER Mac
+  Also builds the macOS version (arm64 and amd64):
+  dist\vpn_specify-<version>-macos-<arch>.tar.gz, with the same contents as
+  the Linux packages.
+
 .EXAMPLE
   .\scripts\build.ps1 -Test -Dist -Linux -Android
 #>
@@ -42,7 +47,8 @@ param(
     [switch]$Icon,
     [switch]$Dist,
     [switch]$Linux,
-    [switch]$Android
+    [switch]$Android,
+    [switch]$Mac
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -78,6 +84,41 @@ function Copy-ThirdPartyLicenses {
     }
 }
 
+# New-UnixPackage builds dist\vpn_specify-<version>-<platform>-<arch>.tar.gz for
+# the GOOS and GOARCH that the caller set in the environment: a single
+# executable (GUI and terminal), LICENSE and licenses\.
+function New-UnixPackage {
+    param([string]$Platform, [string]$Arch)
+    $name = "vpn_specify-$version-$($Platform.ToLower())-$Arch"
+    $stage = Join-Path 'dist' $name
+    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
+    Invoke-Native go @('build', '-trimpath', '-ldflags', "-s -w $ldVersion", '-o', "$stage\vpn_specify", './cmd/vpn_specify')
+    Copy-Item LICENSE "$stage\LICENSE"
+    Copy-ThirdPartyLicenses "$stage\licenses" @('./cmd/vpn_specify')
+    $tgz = Join-Path 'dist' "$name.tar.gz"
+    Remove-Item $tgz -ErrorAction SilentlyContinue
+    # bsdtar stores everything as 0666, without the +x bit. An
+    # mtree spec sets the owner and permissions of each entry.
+    $distAbs = (Resolve-Path 'dist').Path
+    $spec = @('#mtree', "./$name type=dir mode=0755 uid=0 gid=0")
+    foreach ($item in (Get-ChildItem $stage -Recurse | Sort-Object FullName)) {
+        $rel = './' + $item.FullName.Substring($distAbs.Length + 1).Replace('\', '/')
+        if ($item.PSIsContainer) {
+            $spec += "$rel type=dir mode=0755 uid=0 gid=0"
+        } else {
+            $mode = if ($item.Name -eq 'vpn_specify') { '0755' } else { '0644' }
+            $spec += "$rel type=file mode=$mode uid=0 gid=0 contents=$rel"
+        }
+    }
+    $specFile = Join-Path $distAbs "$name.mtree"
+    [IO.File]::WriteAllText($specFile, (($spec -join "`n") + "`n"), $utf8)
+    try {
+        Invoke-Native $bsdtar @('-czf', $tgz, '-C', 'dist', "@$specFile")
+    } finally { Remove-Item $specFile -ErrorAction SilentlyContinue }
+    Write-Host "$Platform ${Arch}: $((Resolve-Path $tgz).Path)" -ForegroundColor Green
+}
+
 Push-Location $root
 try {
     $version = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
@@ -110,41 +151,22 @@ try {
     Invoke-Native go @('build', '-trimpath', '-ldflags', "-s -w $ldVersion", '-o', 'vpn_specify-cli.exe', './cmd/vpn_specify')
     Get-Item vpn_specify.exe, vpn_specify-cli.exe | Format-Table Name, Length, LastWriteTime -AutoSize
 
-    if ($Linux) {
-        # a single executable (GUI and terminal), without cgo; the installer
+    if ($Linux -or $Mac) {
+        # single executables (GUI and terminal), without cgo; the installer
         # and -capture are Windows-only
         $saved = $env:GOOS, $env:GOARCH, $env:CGO_ENABLED
         try {
-            foreach ($arch in 'amd64', 'arm64') {
-                $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = 'linux', $arch, '0'
-                $name = "vpn_specify-$version-linux-$arch"
-                $stage = Join-Path 'dist' $name
-                Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
-                New-Item -ItemType Directory -Force "$stage\licenses" | Out-Null
-                Invoke-Native go @('build', '-trimpath', '-ldflags', "-s -w $ldVersion", '-o', "$stage\vpn_specify", './cmd/vpn_specify')
-                Copy-Item LICENSE "$stage\LICENSE"
-                Copy-ThirdPartyLicenses "$stage\licenses" @('./cmd/vpn_specify')
-                $tgz = Join-Path 'dist' "$name.tar.gz"
-                Remove-Item $tgz -ErrorAction SilentlyContinue
-                # bsdtar stores everything as 0666, without the +x bit. An
-                # mtree spec sets the owner and permissions of each entry.
-                $distAbs = (Resolve-Path 'dist').Path
-                $spec = @('#mtree', "./$name type=dir mode=0755 uid=0 gid=0")
-                foreach ($item in (Get-ChildItem $stage -Recurse | Sort-Object FullName)) {
-                    $rel = './' + $item.FullName.Substring($distAbs.Length + 1).Replace('\', '/')
-                    if ($item.PSIsContainer) {
-                        $spec += "$rel type=dir mode=0755 uid=0 gid=0"
-                    } else {
-                        $mode = if ($item.Name -eq 'vpn_specify') { '0755' } else { '0644' }
-                        $spec += "$rel type=file mode=$mode uid=0 gid=0 contents=$rel"
-                    }
+            if ($Linux) {
+                foreach ($arch in 'amd64', 'arm64') {
+                    $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = 'linux', $arch, '0'
+                    New-UnixPackage -Platform 'Linux' -Arch $arch
                 }
-                $specFile = Join-Path $distAbs "$name.mtree"
-                [IO.File]::WriteAllText($specFile, (($spec -join "`n") + "`n"), $utf8)
-                try {
-                    Invoke-Native $bsdtar @('-czf', $tgz, '-C', 'dist', "@$specFile")
-                } finally { Remove-Item $specFile -ErrorAction SilentlyContinue }
-                Write-Host "Linux ${arch}: $((Resolve-Path $tgz).Path)" -ForegroundColor Green
+            }
+            if ($Mac) {
+                foreach ($arch in 'arm64', 'amd64') {
+                    $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = 'darwin', $arch, '0'
+                    New-UnixPackage -Platform 'macOS' -Arch $arch
+                }
             }
         } finally {
             $env:GOOS, $env:GOARCH, $env:CGO_ENABLED = $saved
