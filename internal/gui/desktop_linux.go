@@ -6,85 +6,22 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"vpn_specify/internal/brand"
 	"vpn_specify/internal/i18n"
-	"vpn_specify/internal/platform"
+	"vpn_specify/internal/store"
 )
 
 // Linux desktop integration (freedesktop.org standards): shortcuts are
 // .desktop files, installed apps come from the system's .desktop files, and
 // the file picker is zenity (GNOME) or kdialog (KDE).
-
-// ---------- arguments ----------
-
-// splitArgs splits a command line like the shell would (single and double
-// quotes, backslash), without expanding variables.
-func splitArgs(s string) []string {
-	var out []string
-	var cur strings.Builder
-	inArg, quote := false, rune(0)
-	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
-		c := rs[i]
-		switch {
-		case quote == '\'':
-			if c == '\'' {
-				quote = 0
-			} else {
-				cur.WriteRune(c)
-			}
-		case quote == '"':
-			if c == '"' {
-				quote = 0
-			} else if c == '\\' && i+1 < len(rs) && strings.ContainsRune("\"\\$`", rs[i+1]) {
-				i++
-				cur.WriteRune(rs[i])
-			} else {
-				cur.WriteRune(c)
-			}
-		case c == '\'' || c == '"':
-			quote, inArg = c, true
-		case c == '\\' && i+1 < len(rs):
-			i++
-			cur.WriteRune(rs[i])
-			inArg = true
-		case c == ' ' || c == '\t' || c == '\n':
-			if inArg {
-				out = append(out, cur.String())
-				cur.Reset()
-				inArg = false
-			}
-		default:
-			cur.WriteRune(c)
-			inArg = true
-		}
-	}
-	if inArg {
-		out = append(out, cur.String())
-	}
-	return out
-}
-
-// joinArgs is the inverse of splitArgs (to show and save the arguments).
-func joinArgs(args []string) string {
-	var parts []string
-	for _, a := range args {
-		if a != "" && !strings.ContainsAny(a, " \t\n'\"\\$`;&|<>()*?[]{}~#") {
-			parts = append(parts, a)
-			continue
-		}
-		parts = append(parts, "'"+strings.ReplaceAll(a, "'", `'\''`)+"'")
-	}
-	return strings.Join(parts, " ")
-}
 
 // desktopQuote escapes an argument for the Exec key of a .desktop file.
 func desktopQuote(a string) string {
@@ -247,17 +184,6 @@ func dataDirs() []string {
 		}
 	}
 	return out
-}
-
-type installedApp struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Comment string `json:"comment"`
-	Path    string `json:"path"`
-	Args    string `json:"args"`
-	WorkDir string `json:"workDir"`
-	Icon    string `json:"icon"`     // icon name or path (goes into the shortcut)
-	IconURL string `json:"iconFile"` // icon file, for the window (empty if not found)
 }
 
 // listInstalledApps reads the visible .desktop files (like the applications menu).
@@ -444,30 +370,6 @@ func pickFile(title, dir, filterName string, patterns []string) (string, bool, e
 	return p, p != "", nil
 }
 
-// ---------- processes ----------
-
-// startDetached starts a program outside the vpn_specify session (it stays
-// open if vpn_specify exits). When running through sudo, it opens as the user.
-func startDetached(path string, args []string, dir string, env []string) (int, error) {
-	cmd := exec.Command(path, args...)
-	cmd.Dir, cmd.Env = dir, env
-	if cmd.Dir == "" {
-		cmd.Dir, _ = os.UserHomeDir()
-	}
-	if fi, err := os.Stat(cmd.Dir); err != nil || !fi.IsDir() {
-		cmd.Dir = ""
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // its own process group (pgid = pid)
-	if su := platform.InvokingUser(); su != nil {
-		su.Apply(cmd)
-	}
-	if err := cmd.Start(); err != nil {
-		return 0, err
-	}
-	go cmd.Wait() // avoid a zombie process
-	return cmd.Process.Pid, nil
-}
-
 // anyRunning reports whether some process is still alive in the pgids
 // groups (the processes opened by vpn_specify and their children) or has one
 // of the executable names in names.
@@ -520,4 +422,74 @@ func openWithDefault(target string) error {
 	}
 	_, err = startDetached(p, []string{target}, "", nil)
 	return err
+}
+
+// hasDisplay: a graphical session exists (macOS always has one).
+func hasDisplay() bool { return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" }
+
+// pickProgram: "Choose…" in the app dialog. A .desktop file is read for its
+// program and arguments; a program is taken as it is.
+func pickProgram() (*pickedApp, error) {
+	p, ok, err := pickFile(i18n.T("Choose the program or shortcut"), applicationsDir(), i18n.T("Programs and shortcuts"), nil)
+	if err != nil || !ok {
+		return nil, err
+	}
+	if strings.HasSuffix(p, ".desktop") {
+		return appFromDesktopFile(p)
+	}
+	if fi, err := os.Stat(p); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+		return nil, i18n.Error("{0} is not an executable program", filepath.Base(p))
+	}
+	return &pickedApp{Name: filepath.Base(p), Path: p, Capture: []string{filepath.Base(p)}}, nil
+}
+
+// createShortcut writes the .desktop file that opens the app through the VPN
+// (in the applications menu, and on the desktop if asked).
+func createShortcut(st *store.Store, id, name string, desktop bool) (string, error) {
+	app, ok := st.App(id)
+	if !ok {
+		return "", store.ErrAppNotFound
+	}
+	name = store.SafeName(name, "")
+	if name == "" {
+		return "", i18n.Error("empty shortcut name")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	file := "vpn_specify-" + strings.ReplaceAll(name, " ", "_") + ".desktop"
+	lnk := filepath.Join(applicationsDir(), file)
+	desc := i18n.T("Opens {0} through the VPN {1} (vpn_specify)", app.Name, app.Config)
+	execLine := desktopQuote(exe) + " launch " + desktopQuote(app.ID)
+	if err := writeDesktopFile(lnk, name, desc, execLine, app.Icon); err != nil {
+		return "", err
+	}
+	if desktop {
+		if err := writeDesktopFile(filepath.Join(desktopDir(), file), name, desc, execLine, app.Icon); err != nil {
+			return "", err
+		}
+	}
+	if app.Shortcut != "" && app.Shortcut != lnk {
+		removeShortcut(app)
+	}
+	_ = st.SetShortcut(app.ID, lnk)
+	log.Printf("shortcut created: %s", lnk)
+	return lnk, nil
+}
+
+// createMainShortcut adds vpn_specify itself to the applications menu.
+func createMainShortcut() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	lnk := filepath.Join(applicationsDir(), "vpn_specify.desktop")
+	return lnk, writeDesktopFile(lnk, "vpn_specify", i18n.T("VPN only for the apps you choose"), desktopQuote(exe), logoIconPath())
+}
+
+// removeShortcut deletes the shortcut files of an app (the menu and the desktop).
+func removeShortcut(app store.AppEntry) {
+	_ = os.Remove(app.Shortcut)
+	_ = os.Remove(filepath.Join(desktopDir(), filepath.Base(app.Shortcut)))
 }

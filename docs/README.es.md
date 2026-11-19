@@ -326,6 +326,20 @@ Diferencias con Windows:
   `~/snap/<app>/common/vpn_specify/profiles/`.
 - **Apps que ignoran el proxy**: sin `-capture`, usa `-L` para direcciones fijas.
 
+## macOS
+
+El soporte para macOS es experimental y aún no se ha probado en un Mac real; informa de los problemas como issues de GitHub. En macOS funcionan la interfaz gráfica y los comandos de terminal (`up`, `run`, `status`, `update` y `-L`) con WireGuard y OpenVPN. Usa la versión `arm64` en Apple Silicon y la `amd64` en Mac Intel. La captura por proceso (`-capture`) solo existe en Windows.
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+Al iniciar un túnel OpenVPN, macOS pide la contraseña de administrador; WireGuard no pide nada. La interfaz es la misma página que en Windows y Linux, servida en `127.0.0.1` con un token aleatorio. Añade una app con **Añadir app…** y luego **Elegir archivo…** (acepta paquetes `.app`). Solo hay modo proxy: navegadores, apps Chromium/Electron y programas que respetan `HTTP_PROXY` entran en la VPN. Los accesos directos no están disponibles en macOS.
+
 ## Android
 
 Instala `vpn_specify-<versión>-android-arm64.apk` (Android 8 o superior; permite

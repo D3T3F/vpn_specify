@@ -340,6 +340,20 @@ vpn_specify status
   `~/snap/<app>/common/vpn_specify/profiles/`.
 - **التطبيقات التي تتجاهل الوكيل**: دون `-capture`، استخدم `-L` للعناوين الثابتة.
 
+## macOS
+
+دعم macOS تجريبي ولم يُختبر بعد على جهاز Mac حقيقي؛ أبلغ عن المشكلات كـ issues على GitHub. على macOS تعمل الواجهة الرسومية وأوامر الطرفية (`up` و`run` و`status` و`update` و`-L`) مع WireGuard وOpenVPN. استخدم نسخة `arm64` على أجهزة Apple Silicon ونسخة `amd64` على أجهزة Mac بمعالج Intel. التقاط كامل لكل عملية (`-capture`) متاح على Windows فقط.
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+عند بدء نفق OpenVPN يطلب macOS كلمة مرور المسؤول؛ أما WireGuard فلا يطلب شيئًا. الواجهة هي الصفحة نفسها على Windows وLinux، وتعمل على `127.0.0.1` برمز عشوائي. تضيف التطبيقات من **إضافة تطبيق…** ثم **اختيار ملف…** (تُقبل حزم `.app`). الوضع المتاح هو وضع الوكيل فقط: تدخل المتصفحات وتطبيقات Chromium/Electron والبرامج التي تحترم `HTTP_PROXY` إلى الشبكة الافتراضية. الاختصارات غير متاحة على macOS.
+
 ## Android
 
 ثبّت `vpn_specify-<الإصدار>-android-arm64.apk` (Android 8 أو أحدث؛ اسمح بالتثبيت من هذا المصدر عند الطلب). يتضمن Android شبكة VPN لكل تطبيق، لذا لا يستخدم التطبيق وكيلًا: تمر كل حركة TCP وUDP للتطبيقات المختارة، بما فيها الصوت، عبر النفق، بدون root. يبقى باقي الهاتف على شبكتك العادية.

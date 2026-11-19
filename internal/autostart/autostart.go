@@ -6,7 +6,8 @@
 //     logon, with highest privileges (vpn_specify needs Administrator; the
 //     task avoids a UAC prompt at every logon);
 //   - Linux: ~/.config/autostart/vpn_specify.desktop (XDG standard, followed
-//     by GNOME, KDE, XFCE, Cinnamon, MATE...).
+//     by GNOME, KDE, XFCE, Cinnamon, MATE...);
+//   - macOS: ~/Library/LaunchAgents/io.github.d3t3f.vpn_specify.plist (launchd).
 package autostart
 
 // Arg is the argument the entry passes to vpn_specify.

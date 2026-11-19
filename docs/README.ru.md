@@ -326,6 +326,20 @@ vpn_specify status
 - **Приложения, игнорирующие прокси**: без `-capture` используйте `-L` для
   фиксированных адресов.
 
+## macOS
+
+Поддержка macOS экспериментальная и ещё не проверена на настоящем Mac; о проблемах сообщайте как об issues на GitHub. На macOS графический интерфейс и команды терминала (`up`, `run`, `status`, `update` и `-L`) работают с WireGuard и OpenVPN. Используйте сборку `arm64` для Apple Silicon и `amd64` для Mac на Intel. Захват отдельных процессов (`-capture`) есть только в Windows.
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+При запуске туннеля OpenVPN macOS запрашивает пароль администратора; WireGuard ничего не запрашивает. Интерфейс — та же страница, что в Windows и Linux; она работает на `127.0.0.1` со случайным токеном. Приложения добавляются через **Добавить приложение…** и **Выбрать файл…** (принимаются пакеты `.app`). Доступен только режим прокси: браузеры, приложения Chromium/Electron и программы, которые учитывают `HTTP_PROXY`, идут через VPN. Ярлыки на macOS недоступны.
+
 ## Android
 
 Установите `vpn_specify-<версия>-android-arm64.apk` (Android 8 или новее; при запросе

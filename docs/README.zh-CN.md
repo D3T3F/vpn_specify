@@ -286,6 +286,20 @@ vpn_specify status
   因此它们的配置文件放在 `~/snap/<app>/common/vpn_specify/profiles/`。
 - **忽略代理的应用**：没有 `-capture` 时，请用 `-L` 转发固定地址。
 
+## macOS
+
+macOS 支持仍处于试验阶段，尚未在真实的 Mac 上测试；请将问题提交为 GitHub Issue。 在 macOS 上，图形界面和终端命令（`up`、`run`、`status`、`update` 和 `-L`）可与 WireGuard 和 OpenVPN 配合使用。Apple 芯片请使用 `arm64` 版本，Intel 芯片的 Mac 请使用 `amd64` 版本。按进程捕获（`-capture`）仅支持 Windows。
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+启动 OpenVPN 隧道时，macOS 会要求输入管理员密码；WireGuard 不需要任何输入。界面与 Windows、Linux 上的页面相同，运行在 `127.0.0.1` 上并带有随机令牌。通过 **添加应用…** 再 **选择文件…** 添加应用（可选择 `.app` 包）。仅支持代理模式：浏览器、Chromium/Electron 应用以及遵循 `HTTP_PROXY` 的程序会进入 VPN。macOS 上不提供快捷方式。
+
 ## Android
 
 安装 `vpn_specify-<版本>-android-arm64.apk`(Android 8 或更高版本;出现提示时允许从此来源安装)。Android 内置按应用 VPN,因此应用不使用代理:所选应用的全部 TCP 和 UDP 流量(包括语音)都经过隧道,无需 root。手机的其余部分仍在您的普通网络上。

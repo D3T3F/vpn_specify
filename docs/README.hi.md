@@ -315,6 +315,20 @@ Windows से अंतर:
 - **प्रॉक्सी को अनदेखा करने वाले ऐप**: `-capture` नहीं है, इसलिए तय पतों के
   लिए `-L` का उपयोग करें।
 
+## macOS
+
+macOS समर्थन प्रयोगात्मक है और अभी किसी असली Mac पर परखा नहीं गया है; समस्याएँ GitHub issues के रूप में बताएँ। macOS पर ग्राफ़िकल इंटरफ़ेस और टर्मिनल कमांड (`up`, `run`, `status`, `update` और `-L`) WireGuard और OpenVPN के साथ काम करते हैं। Apple Silicon के लिए `arm64` बिल्ड और Intel Mac के लिए `amd64` बिल्ड इस्तेमाल करें। हर प्रोसेस का पूरा कैप्चर (`-capture`) केवल Windows पर है।
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+OpenVPN टनल शुरू होने पर macOS एडमिनिस्ट्रेटर पासवर्ड माँगता है; WireGuard कुछ नहीं माँगता। इंटरफ़ेस वही पेज है जो Windows और Linux पर है, जो `127.0.0.1` पर एक रैंडम टोकन के साथ चलता है। ऐप **ऐप जोड़ें…** और फिर **फ़ाइल चुनें…** से जोड़ें (`.app` बंडल भी चलते हैं)। केवल प्रॉक्सी मोड उपलब्ध है: ब्राउज़र, Chromium/Electron ऐप और `HTTP_PROXY` मानने वाले प्रोग्राम VPN में जाते हैं। macOS पर शॉर्टकट उपलब्ध नहीं हैं।
+
 ## Android
 
 `vpn_specify-<संस्करण>-android-arm64.apk` इंस्टॉल करें (Android 8 या नया; पूछे जाने पर इस स्रोत से इंस्टॉल की अनुमति दें)। Android में प्रति-ऐप VPN अंतर्निहित है, इसलिए ऐप प्रॉक्सी का उपयोग नहीं करता: चुने गए ऐप का पूरा TCP और UDP ट्रैफ़िक, आवाज़ सहित, टनल से जाता है, बिना root के। फ़ोन का बाकी हिस्सा आपके सामान्य नेटवर्क पर रहता है।

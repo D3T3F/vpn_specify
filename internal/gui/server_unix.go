@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package gui
 
@@ -12,9 +12,9 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -24,7 +24,7 @@ import (
 	"vpn_specify/internal/launcher"
 )
 
-// Window on Linux
+// Window on Linux and macOS
 //
 // On Windows the page runs in WebView2 and the vs* functions are bound
 // straight to Go. On Linux the same page is served by an HTTP server on
@@ -108,7 +108,7 @@ func (s *uiServer) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, pageHTML("linux", s.bridgeScript()))
+	io.WriteString(w, pageHTML(runtime.GOOS, s.bridgeScript()))
 }
 
 func (s *uiServer) bridgeScript() string {
@@ -346,5 +346,3 @@ var _ = []string{
 	i18n.N("vpn_specify is not responding (was it closed?)"),
 	i18n.N("invalid reply (HTTP {0})"),
 }
-
-func hasDisplay() bool { return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" }

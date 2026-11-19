@@ -34,9 +34,9 @@ type pickedApp struct {
 	Capture []string `json:"capture"`
 }
 
-// pageHTML builds the page: logo, platform ("windows" or "linux", which
+// pageHTML builds the page: logo, platform ("windows", "linux" or "darwin", which
 // adjusts texts and options), the translation runtime (internal/i18n) and,
-// on Linux, the script that binds the vs* functions to the local server (on
+// on Linux and macOS, the script that binds the vs* functions to the local server (on
 // Windows they come from WebView2).
 func pageHTML(platform, bridge string) string {
 	return strings.NewReplacer(

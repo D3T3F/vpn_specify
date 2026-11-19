@@ -51,16 +51,7 @@ func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 		return "", i18n.Wrap(err, "could not create {0}", dir)
 	}
 
-	var total int64
-	err = fs.WalkDir(payload, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		progress(i18n.T("Copying {0}…", p))
-		n, err := copyFile(payload, p, filepath.Join(dir, filepath.FromSlash(p)))
-		total += n
-		return err
-	})
+	total, restart, err := copyTree(payload, dir, progress)
 	if err != nil {
 		return "", err
 	}
@@ -88,38 +79,80 @@ func Install(payload fs.FS, o Options, progress func(string)) (string, error) {
 		return "", i18n.Wrap(err, "uninstall registration")
 	}
 	progress(i18n.T("Done."))
+	if restart {
+		progress(i18n.T("Restart Windows to finish updating the WinDivert driver."))
+	}
 	return dir, nil
 }
 
+// copyTree copies every file of payload into dir. restart is true when an
+// old file could only be moved aside and may stay in use until Windows
+// restarts.
+func copyTree(payload fs.FS, dir string, progress func(string)) (total int64, restart bool, err error) {
+	err = fs.WalkDir(payload, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		progress(i18n.T("Copying {0}…", p))
+		n, r, err := copyFile(payload, p, filepath.Join(dir, filepath.FromSlash(p)))
+		total += n
+		restart = restart || r
+		return err
+	})
+	return total, restart, err
+}
+
 // copyFile writes to a temporary file and swaps it in at the end, so a
-// half-written .exe is never left behind if something fails.
-func copyFile(src fs.FS, name, dst string) (int64, error) {
+// half-written .exe is never left behind if something fails. A destination
+// with the same content is left alone (a loaded driver cannot be replaced).
+// The temporary file is not protected against symlinks: Program Files can
+// only be written by administrators, who can already change anything there.
+func copyFile(src fs.FS, name, dst string) (n int64, restart bool, err error) {
 	in, err := src.Open(name)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer in.Close()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return 0, err
+		return 0, false, err
+	}
+	if same, err := sameContent(src, name, dst); err == nil && same {
+		info, err := in.Stat()
+		if err != nil {
+			return 0, false, err
+		}
+		return info.Size(), false, nil
 	}
 	tmp := dst + ".new"
 	out, err := os.Create(tmp)
 	if err != nil {
-		return 0, i18n.Wrap(err, "could not write {0}", dst)
+		return 0, false, i18n.Wrap(err, "could not write {0}", dst)
 	}
-	n, err := io.Copy(out, in)
+	n, err = io.Copy(out, in)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		os.Remove(tmp)
-		return 0, err
+		return 0, false, err
 	}
-	if err := os.Rename(tmp, dst); err != nil {
-		os.Remove(tmp)
-		return 0, i18n.Wrap(err, "could not replace {0} (is it in use?)", dst)
+	stopped := true
+	if isWinDivertDriver(dst) {
+		stopped = stopWinDivertService(dst)
 	}
-	return n, nil
+	if err := renameFile(tmp, dst); err != nil {
+		if !isFileInUse(err) {
+			os.Remove(tmp)
+			return 0, false, i18n.Wrap(err, "could not replace {0} (is it in use?)", dst)
+		}
+		if err := replaceAside(tmp, dst); err != nil {
+			os.Remove(tmp)
+			return 0, false, err
+		}
+		// the old image may still be loaded until the next restart
+		return n, !stopped, nil
+	}
+	return n, false, nil
 }
 
 func register(dir string, size int64) error {
@@ -178,14 +211,14 @@ func Extract(payload fs.FS, dir string, progress func(string)) error {
 	if len(RunningInstances(dir)) > 0 {
 		return errRunning
 	}
-	return fs.WalkDir(payload, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		progress(i18n.T("Copying {0}…", p))
-		_, err = copyFile(payload, p, filepath.Join(dir, filepath.FromSlash(p)))
+	_, restart, err := copyTree(payload, dir, progress)
+	if err != nil {
 		return err
-	})
+	}
+	if restart {
+		progress(i18n.T("Restart Windows to finish updating the WinDivert driver."))
+	}
+	return nil
 }
 
 // WaitProcessExit waits for process pid to end (used when updating:

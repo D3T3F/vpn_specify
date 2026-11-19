@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package tunnel
 
@@ -9,7 +9,8 @@ import (
 
 // On Windows the "strong host" model already ensures that a socket bound to
 // the tunnel IP only leaves through the tunnel interface; no device binding
-// is needed.
+// is needed. (Linux and macOS bind to the interface, see bind_linux.go and
+// bind_darwin.go.)
 
 func prepareTunnelInterface(ip net.IP) (string, error) { return "", nil }
 

@@ -12,12 +12,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"vpn_specify/internal/i18n"
+	"vpn_specify/internal/ovpninstall"
 	"vpn_specify/internal/platform"
 )
 
@@ -83,6 +85,12 @@ func findOpenVPN(explicit string) (string, error) {
 	if p, err := exec.LookPath("openvpn"); err == nil {
 		return p, nil
 	}
+	if runtime.GOOS == "darwin" {
+		if p, ok := ovpninstall.FindOnMacOS(fileExists); ok {
+			return p, nil
+		}
+		return "", ErrOpenVPNMissing
+	}
 	if runtime.GOOS != "windows" {
 		for _, p := range []string{"/usr/sbin/openvpn", "/usr/local/sbin/openvpn"} { // sudo's PATH does not always have sbin
 			if _, err := os.Stat(p); err == nil {
@@ -100,9 +108,18 @@ func findOpenVPN(explicit string) (string, error) {
 	return "", ErrOpenVPNMissing
 }
 
+// fileExists reports whether a file (or folder) exists at path.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func openVPNMissing() error {
 	if runtime.GOOS == "windows" {
 		return i18n.Sentinel("openvpn.exe not found; install OpenVPN Community (https://openvpn.net/community-downloads/) or use -openvpn <path>")
+	}
+	if runtime.GOOS == "darwin" {
+		return i18n.Sentinel("openvpn not found; install it with Homebrew (brew install openvpn) or use -openvpn <path>")
 	}
 	return i18n.Sentinel("openvpn not found; install the openvpn package (e.g. sudo apt install openvpn) or use -openvpn <path>")
 }
@@ -221,8 +238,9 @@ func parsePushReply(line string) (ip net.IP, dns []netip.Addr) {
 func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	// Linux, graphical interface without root: openvpn starts via pkexec (the
 	// system asks for the administrator password, like UAC on Windows)
-	// through "vpn_specify openvpn-helper" (see RunOpenVPNHelper).
-	useHelper := runtime.GOOS == "linux" && o.NoConsole && !platform.IsElevated()
+	// through "vpn_specify openvpn-helper" (see RunOpenVPNHelper). macOS does
+	// the same through the administrator prompt of osascript (see admin.go).
+	useHelper := (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && o.NoConsole && !platform.IsElevated()
 	if !platform.IsElevated() && !useHelper {
 		if runtime.GOOS != "windows" {
 			return nil, ErrNeedsAdmin
@@ -284,7 +302,36 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	args = append(args, authArgs...)
 	var stopEvent func()
 	var cmd *exec.Cmd
+	var logFile string        // macOS helper: openvpn's output is read back from here
+	var adminErr bytes.Buffer // macOS: what osascript says (e.g. the prompt was cancelled)
 	switch {
+	case useHelper && runtime.GOOS == "darwin":
+		// osascript cannot stream the output of a root command, so openvpn
+		// writes to a log file that is read back; the helper stops openvpn when
+		// the stop file appears (see helper_darwin.go).
+		self, err := os.Executable()
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, err
+		}
+		absExe, err := filepath.Abs(exe)
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, err
+		}
+		stopFile := filepath.Join(tmpDir, "stop")
+		logFile = filepath.Join(tmpDir, "openvpn.log")
+		if err := os.WriteFile(logFile, nil, 0o600); err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, err
+		}
+		helperArgs := append([]string{stopFile, strconv.Itoa(os.Getpid()), logFile, absExe}, args...)
+		cmd, err = adminCommand(helperShellCommand(self, helperArgs))
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return nil, err
+		}
+		stopEvent = func() { _ = os.WriteFile(stopFile, nil, 0o600) }
 	case useHelper:
 		pk, err := exec.LookPath("pkexec")
 		if err != nil {
@@ -322,7 +369,11 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 	platform.KillWithParent(cmd)
 	if o.NoConsole {
 		platform.HideConsole(cmd)
-		cmd.Stderr = logWriter("[openvpn] ")
+		var errOut io.Writer = logWriter("[openvpn] ")
+		if logFile != "" {
+			errOut = io.MultiWriter(&adminErr, errOut)
+		}
+		cmd.Stderr = errOut
 	} else {
 		cmd.Stdin = os.Stdin // lets the user type user/password if the .ovpn asks
 		cmd.Stderr = os.Stderr
@@ -366,7 +417,16 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		ready     = make(chan struct{})
 		failed    = make(chan error, 1)
 	)
-	go scanOutput(stdout, func(line string) {
+	var output io.Reader = stdout
+	if logFile != "" {
+		tail, err := openTail(logFile, t.exited)
+		if err != nil {
+			t.kill()
+			return nil, err
+		}
+		output = tail
+	}
+	go scanOutput(output, func(line string) {
 		if o.Verbose || isImportantOVPNLine(line) {
 			log.Printf("[openvpn] %s", line)
 		}
@@ -409,6 +469,9 @@ func openOpenVPN(path string, data []byte, o Options) (Tunnel, error) {
 		t.kill()
 		var ee *exec.ExitError
 		if useHelper && errors.As(err, &ee) && (ee.ExitCode() == 126 || ee.ExitCode() == 127) {
+			return nil, ErrAdminDenied
+		}
+		if logFile != "" && strings.Contains(adminErr.String(), "(-128)") { // osascript: the prompt was cancelled
 			return nil, ErrAdminDenied
 		}
 		return nil, i18n.Error("openvpn failed to connect: {0} (run with -v to see the full log)", err)

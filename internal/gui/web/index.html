@@ -99,7 +99,7 @@ input[type=search] { font: inherit; color: var(--text); background: var(--input)
 .card.update .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .bar { height: 6px; background: var(--chip); border-radius: 99px; margin-top: 10px; overflow: hidden; }
 .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
-.platform-linux .win-only, .platform-windows .linux-only { display: none !important; }
+.platform-linux .win-only, .platform-darwin .win-only, .platform-windows .unix-only, .platform-windows .macos-only, .platform-linux .macos-only, .platform-windows .linux-only, .platform-darwin .linux-only, .platform-darwin .shortcut-only { display: none !important; }
 body.gone::after { content: attr(data-gone-text); position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; background: rgba(0,0,0,.65); color: #fff; font-size: 16px; z-index: 100; }
 [dir=rtl] .seg label, [dir=rtl] .item { text-align: right; }
 pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
@@ -155,7 +155,7 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
     <h2><span data-i18n>Apps in the VPN</span> <span class="spacer"></span><button class="small primary" onclick="addApp()" data-i18n>Add app…</button></h2>
     <div id="apps" class="list"></div>
     <p class="hint win-only" data-i18n>Use “Create shortcut” to get, for example, “DiscordVPN” in Windows search next to the original Discord.</p>
-    <p class="hint linux-only" data-i18n>Use “Create shortcut” to get, for example, “DiscordVPN” in the applications menu next to the original Discord.</p>
+    <p class="hint unix-only shortcut-only" data-i18n>Use “Create shortcut” to get, for example, “DiscordVPN” in the applications menu next to the original Discord.</p>
   </section>
 
   <section class="card wide">
@@ -169,7 +169,7 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
         <span data-i18n>Check for updates when vpn_specify starts</span></label>
       <div class="row">
         <button class="small win-only" onclick="mainShortcut()" data-i18n>Add “vpn_specify” to the Start menu</button>
-        <button class="small linux-only" onclick="mainShortcut()" data-i18n>Add “vpn_specify” to the applications menu</button>
+        <button class="small unix-only shortcut-only" onclick="mainShortcut()" data-i18n>Add “vpn_specify” to the applications menu</button>
       </div>
       <div class="row about"><span id="aboutText">vpn_specify</span><span class="spacer"></span>
         <button class="small" onclick="checkUpdates()" data-i18n>Check for updates</button>
@@ -200,15 +200,15 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
       <label><input type="radio" name="aMode" value="proxy" onchange="modeChanged()">
         <span><b data-i18n>Proxy</b>
           <small class="win-only" data-i18n>TCP only, for browsers and Chromium/Electron apps. No driver needed.</small>
-          <small class="linux-only" data-i18n>Through the local proxy: browsers, Chromium/Electron apps (Discord, Slack, VS Code…) and programs that honor HTTP_PROXY. Full capture (UDP and voice) only exists on Windows.</small></span></label>
+          <small class="unix-only" data-i18n>Through the local proxy: browsers, Chromium/Electron apps (Discord, Slack, VS Code…) and programs that honor HTTP_PROXY. Full capture (UDP and voice) only exists on Windows.</small></span></label>
     </div>
     <label class="field" id="aCaptureField"><span data-i18n>Captured processes (comma-separated)</span><input type="text" id="aCapture" placeholder="discord.exe"></label>
     <div>
       <label class="check"><input type="checkbox" id="aAutostart">
         <span class="win-only" data-i18n>Open with Windows (when you sign in)</span>
-        <span class="linux-only" data-i18n>Open with the system (when you log in)</span></label>
+        <span class="unix-only" data-i18n>Open with the system (when you log in)</span></label>
       <p class="hint win-only" style="margin:4px 0 0 26px" data-i18n>vpn_specify connects the VPN and opens the app right after you sign in, without a UAC prompt. The marked apps must use the same VPN.</p>
-      <p class="hint linux-only" style="margin:4px 0 0 26px" data-i18n>vpn_specify connects the VPN and opens the app right after you log in (OpenVPN VPNs ask for the administrator password at that moment). The marked apps must use the same VPN.</p>
+      <p class="hint unix-only" style="margin:4px 0 0 26px" data-i18n>vpn_specify connects the VPN and opens the app right after you log in (OpenVPN VPNs ask for the administrator password at that moment). The marked apps must use the same VPN.</p>
     </div>
     <div class="buttons">
       <button type="button" onclick="appDlg.close()" data-i18n>Cancel</button>
@@ -278,10 +278,10 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
   <form method="dialog" onsubmit="return false">
     <h3 data-i18n>Create shortcut</h3>
     <label class="field"><span class="win-only" data-i18n>Shortcut name (shows up in Windows search)</span>
-      <span class="linux-only" data-i18n>Shortcut name (shows up in the applications menu)</span><input type="text" id="scName"></label>
+      <span class="unix-only" data-i18n>Shortcut name (shows up in the applications menu)</span><input type="text" id="scName"></label>
     <label class="check"><input type="checkbox" id="scDesktop"> <span data-i18n>Also create it on the desktop</span></label>
     <p class="hint win-only" style="margin:0" data-i18n>When the shortcut is opened, vpn_specify connects the VPN (asking for Administrator permission if it is not connected yet) and opens the app inside it.</p>
-    <p class="hint linux-only" style="margin:0" data-i18n>When the shortcut is opened, vpn_specify connects the VPN and opens the app inside it. OpenVPN VPNs ask for the administrator password when connecting.</p>
+    <p class="hint unix-only" style="margin:0" data-i18n>When the shortcut is opened, vpn_specify connects the VPN and opens the app inside it. OpenVPN VPNs ask for the administrator password when connecting.</p>
     <div class="buttons">
       <button type="button" onclick="scDlg.close()" data-i18n>Cancel</button>
       <button type="button" class="primary" onclick="createShortcut()" data-i18n>Create shortcut</button>
@@ -296,6 +296,7 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
     <label class="field"><span data-i18n>Password</span><input type="password" id="cPass" autocomplete="off" data-i18n-attr="placeholder" placeholder="(leave empty to keep the current one)"></label>
     <p class="hint win-only" style="margin:0" data-i18n>The password is stored protected by Windows (DPAPI): only your account on this PC can read it.</p>
     <p class="hint linux-only" style="margin:0" data-i18n>The password is stored encrypted; the key is in ~/.local/share/vpn_specify, readable only by your account.</p>
+    <p class="hint macos-only" style="margin:0" data-i18n>The password is stored encrypted; the key is in the data folder, readable only by your account.</p>
     <div class="buttons">
       <button type="button" onclick="credDlg.close()" data-i18n>Cancel</button>
       <button type="button" class="primary" onclick="saveCred()" data-i18n>Save</button>
@@ -341,7 +342,9 @@ pre#log, pre.license, textarea, code { direction: ltr; text-align: left; }
 
 <script>
 const $ = id => document.getElementById(id);
-const LINUX = window.VS_PLATFORM === "linux";
+const MACOS = window.VS_PLATFORM === "darwin";
+const UNIX = window.VS_PLATFORM === "linux" || MACOS; // Linux and macOS: the browser hands over the file content, the apps come from the local page
+const SHORTCUTS = !MACOS; // .desktop and Start menu shortcuts (not on macOS)
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let state = null, lastConfigs = "", lastApps = "", logNext = 0, editing = null, scApp = null, credCfg = null, cfgEditing = null;
 
@@ -364,7 +367,8 @@ function stateName(s) {
 // renderTexts fills in the texts built by the script (the static ones are
 // translated by applyI18n through data-i18n).
 function renderTexts() {
-  document.body.dataset.goneText = LINUX ? t("vpn_specify was closed. Open it again from the applications menu.")
+  document.body.dataset.goneText = MACOS ? t("vpn_specify was closed. Run vpn_specify again to open it.")
+    : UNIX ? t("vpn_specify was closed. Open it again from the applications menu.")
     : t("vpn_specify was closed. Open it again from the Start menu.");
   $("langSel").innerHTML = I18N_LANGUAGES.map(l => `<option value="${esc(l.code)}">${esc(l.name)}</option>`).join("");
   $("langSel").value = I18N_LANG;
@@ -396,7 +400,7 @@ async function refresh() {
   let info = "";
   if (st.state === "connected") {
     info += `<dt>${esc(t("Since"))}</dt><dd>${new Date(st.since * 1000).toLocaleTimeString(I18N_LANG)}</dd>`;
-    if (!LINUX) info += `<dt>${esc(t("Capture"))}</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : esc(t("no app captured"))}</dd>`;
+    if (!UNIX) info += `<dt>${esc(t("Capture"))}</dt><dd>${st.captured && st.captured.length ? esc(st.captured.join(", ")) : esc(t("no app captured"))}</dd>`;
     info += `<dt>${esc(t("Proxy"))}</dt><dd>SOCKS5 ${esc(st.socks)} · HTTP ${esc(st.http)}</dd>`;
   }
   if (st.state === "connecting" && st.detail) info += `<dd style="grid-column:1/-1">${esc(st.detail)}</dd>`;
@@ -432,12 +436,12 @@ async function refresh() {
     $("apps").innerHTML = s.apps.length ? s.apps.map(a => `
       <div class="item">
         <div class="avatar">${esc((a.name[0] || "?").toUpperCase())}</div>
-        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !LINUX ? esc(t("full capture")) : esc(t("proxy"))}</span><span class="badge">${esc(a.config)}</span>${a.autostart ? `<span class="badge">${esc(t("starts with the system"))}</span>` : ""}</div>
+        <div class="grow"><div class="title">${esc(a.name)}<span class="badge">${a.mode === "capture" && !UNIX ? esc(t("full capture")) : esc(t("proxy"))}</span><span class="badge">${esc(a.config)}</span>${a.autostart ? `<span class="badge">${esc(t("starts with the system"))}</span>` : ""}</div>
           <div class="sub">${esc(a.path)} ${esc(a.args)}</div>
-          ${a.shortcut ? `<div class="sub">${esc(t("Shortcut: {0}", shortcutName(a.shortcut)))}</div>` : ""}</div>
+          ${a.shortcut ? `<div class="sub shortcut-only">${esc(t("Shortcut: {0}", shortcutName(a.shortcut)))}</div>` : ""}</div>
         <div class="actions">
           <button class="small primary" onclick='launchApp(${JSON.stringify(a.id)})'>${esc(t("Open in VPN"))}</button>
-          <button class="small" onclick='openShortcut(${JSON.stringify(a.id)})'>${esc(t("Create shortcut"))}</button>
+          <button class="small shortcut-only" onclick='openShortcut(${JSON.stringify(a.id)})'>${esc(t("Create shortcut"))}</button>
           <button class="small" onclick='editApp(${JSON.stringify(a.id)})'>${esc(t("Edit"))}</button>
           <button class="small danger" onclick='removeApp(${JSON.stringify(a.id)})'>${esc(t("Remove"))}</button>
         </div>
@@ -522,16 +526,16 @@ async function checkIP() {
 }
 function shortcutName(p) {
   const n = p.split(/[\\/]/).pop();
-  return LINUX ? n.replace(/^vpn_specify-/, "").replace(/\.desktop$/, "").replace(/_/g, " ") : n.replace(/\.lnk$/i, "");
+  return UNIX ? n.replace(/^vpn_specify-/, "").replace(/\.desktop$/, "").replace(/_/g, " ") : n.replace(/\.lnk$/i, "");
 }
 async function importConfig() {
-  const c = LINUX ? await readConfigFile() : await call(vsImportConfig());
+  const c = UNIX ? await readConfigFile() : await call(vsImportConfig());
   if (c) {
     toast(t("VPN “{0}” imported.", c.name), "ok");
     if (c.needAuth) openCred(c.name);
   }
 }
-// Linux: the file picker is the browser's, which hands over the content (not the path).
+// Linux and macOS: the file picker is the browser's, which hands over the content (not the path).
 function readConfigFile() {
   return new Promise(resolve => {
     const f = $("cfgFile");
@@ -879,17 +883,17 @@ function openAppDlg(a) {
   $("aCapture").value = (a.capture || []).join(", ");
   $("aAutostart").checked = !!a.autostart;
   fillConfigSelect($("aConfig"), a.config || $("connSelect").value);
-  document.querySelector(`input[name=aMode][value=${a.mode === "proxy" || LINUX ? "proxy" : "capture"}]`).checked = true;
+  document.querySelector(`input[name=aMode][value=${a.mode === "proxy" || UNIX ? "proxy" : "capture"}]`).checked = true;
   modeChanged();
   appDlg.showModal();
 }
 async function addApp() {
   if (!state.settings.configs.length) { toast(t("Import a VPN first."), "error"); return; }
-  const p = LINUX ? await chooseApp() : await call(vsPickApp());
-  if (p) openAppDlg({ ...p, mode: LINUX ? "proxy" : "capture" });
+  const p = UNIX ? await chooseApp() : await call(vsPickApp());
+  if (p) openAppDlg({ ...p, mode: UNIX ? "proxy" : "capture" });
 }
 async function pickApp() {
-  const p = LINUX ? await chooseApp() : await call(vsPickApp());
+  const p = UNIX ? await chooseApp() : await call(vsPickApp());
   if (!p) return;
   Object.assign(editing, { path: p.path, args: p.args, workDir: p.workDir, icon: p.icon });
   $("aPath").value = p.path; $("aArgs").value = p.args;
@@ -905,7 +909,7 @@ async function saveApp() {
   const isNew = !a.id;
   const saved = await call(vsSaveApp(a), t("App saved."));
   appDlg.close();
-  if (isNew) openShortcut(saved.id, saved);
+  if (isNew && SHORTCUTS) openShortcut(saved.id, saved);
 }
 function removeApp(id) {
   const a = state.settings.apps.find(a => a.id === id);
@@ -920,14 +924,14 @@ function openShortcut(id, app) {
 async function createShortcut() {
   await call(vsCreateShortcut(scApp.id, $("scName").value, $("scDesktop").checked));
   scDlg.close();
-  toast(LINUX ? t("Shortcut “{0}” created in the applications menu.", $("scName").value)
+  toast(UNIX ? t("Shortcut “{0}” created in the applications menu.", $("scName").value)
     : t("Shortcut “{0}” created in the Start menu. Look for it in Windows search.", $("scName").value), "ok");
 }
 async function mainShortcut() {
-  await call(vsCreateMainShortcut(), LINUX ? t("Shortcut “vpn_specify” created in the applications menu.") : t("Shortcut “vpn_specify” created in the Start menu."));
+  await call(vsCreateMainShortcut(), UNIX ? t("Shortcut “vpn_specify” created in the applications menu.") : t("Shortcut “vpn_specify” created in the Start menu."));
 }
 
-// ---------- Linux: choose among the installed apps (.desktop files) ----------
+// ---------- Linux and macOS: choose among the installed apps (.desktop files on Linux) ----------
 let pickResolve = null, pickApps = [], pickShown = [];
 async function chooseApp() {
   const done = new Promise(res => pickResolve = res);
@@ -961,7 +965,7 @@ async function pickFromFile() {
   try { const p = await vsPickApp(); if (p) finishPick(p); }
   catch (e) { toast(String(e), "error"); }
 }
-if (LINUX) {
+if (UNIX) {
   pickDlg.addEventListener("close", () => finishPick(null));
   $("pickList").addEventListener("click", e => {
     const it = e.target.closest(".item.pick");

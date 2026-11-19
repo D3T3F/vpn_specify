@@ -3,7 +3,9 @@
 //
 // Each release has one package per system, built by scripts\build.ps1:
 //   - Windows: vpn_specify-<version>-win64.zip (with vpn_specify-setup.exe);
-//   - Linux:   vpn_specify-<version>-linux-<amd64|arm64>.tar.gz.
+//   - Linux:   vpn_specify-<version>-linux-<amd64|arm64>.tar.gz;
+//   - macOS:   vpn_specify-<version>-macos-<amd64|arm64>.tar.gz (the single
+//     executable vpn_specify, with LICENSE and licenses/).
 //
 // A download is only accepted if its SHA-256 matches what GitHub reports for
 // the file (the API's "digest" field) or a SHA256SUMS file in the release.
@@ -67,11 +69,18 @@ type Asset struct {
 
 // AssetName is this platform's package name for version ver.
 func AssetName(ver string) string {
-	switch runtime.GOOS {
+	return assetName(runtime.GOOS, runtime.GOARCH, ver)
+}
+
+// assetName is AssetName for any system (so that every name can be tested).
+func assetName(goos, goarch, ver string) string {
+	switch goos {
 	case "windows":
 		return "vpn_specify-" + ver + "-win64.zip"
 	case "linux":
-		return "vpn_specify-" + ver + "-linux-" + runtime.GOARCH + ".tar.gz"
+		return "vpn_specify-" + ver + "-linux-" + goarch + ".tar.gz"
+	case "darwin":
+		return "vpn_specify-" + ver + "-macos-" + goarch + ".tar.gz"
 	}
 	return ""
 }

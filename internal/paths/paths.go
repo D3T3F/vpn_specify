@@ -30,8 +30,24 @@ func DataDir() string {
 	if runtime.GOOS == "windows" {
 		base, err = os.UserCacheDir() // %LOCALAPPDATA%
 	}
+	if runtime.GOOS == "darwin" {
+		base, err = macOSConfigBase() // os.UserConfigDir would use ~/Library/Application Support
+	}
 	if err == nil {
 		return filepath.Join(base, "vpn_specify")
 	}
 	return portable
+}
+
+// macOSConfigBase is $XDG_CONFIG_HOME, or ~/.config: the same folder as on
+// Linux, which the app uses on macOS too.
+func macOSConfigBase() (string, error) {
+	if v := os.Getenv("XDG_CONFIG_HOME"); v != "" {
+		return v, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config"), nil
 }

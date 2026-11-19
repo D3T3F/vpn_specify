@@ -94,8 +94,12 @@ func Uninstall(args []string) error {
 	}
 
 	// only the files the installer put there; the folder goes away only if empty
+	// leftovers of an update (.old: a replaced file that was in use; .new: an interrupted copy)
 	for _, f := range []string{CLIExe, `windivert\WinDivert.dll`, `windivert\WinDivert64.sys`, `windivert\LICENSE`, "LEIA-ME.txt", "README.txt", "LICENSE.txt"} {
-		removeOrDelay(filepath.Join(dir, f))
+		p := filepath.Join(dir, f)
+		removeOrDelay(p)
+		removeOrDelay(p + ".old")
+		removeOrDelay(p + ".new")
 	}
 	_ = os.Remove(filepath.Join(dir, "windivert"))
 	if removeData && portableData {

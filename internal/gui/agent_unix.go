@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package gui
 
@@ -23,10 +23,10 @@ import (
 	"vpn_specify/internal/update"
 )
 
-// The Linux agent does the same as on Windows (agent_windows.go): keeps the
+// The Unix agent (Linux and macOS) does the same as on Windows (agent_windows.go): keeps the
 // VPN, opens the apps and exits by itself when they close. The differences:
 //   - it runs as a normal user; only OpenVPN asks for the administrator
-//     password (pkexec), when connecting;
+//     password, when connecting;
 //   - the window is a local page (server_linux.go);
 //   - there is no full capture: every app uses proxy mode.
 

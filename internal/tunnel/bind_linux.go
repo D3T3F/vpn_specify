@@ -21,23 +21,6 @@ import (
 // interface with SO_BINDTODEVICE (allowed for root, and for normal users
 // since kernel 5.7).
 
-// interfaceWithIP returns the name of the interface holding this IP (e.g. tun0).
-func interfaceWithIP(ip net.IP) (string, error) {
-	ifs, err := net.Interfaces()
-	if err != nil {
-		return "", err
-	}
-	for _, ifc := range ifs {
-		addrs, _ := ifc.Addrs()
-		for _, a := range addrs {
-			if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
-				return ifc.Name, nil
-			}
-		}
-	}
-	return "", i18n.Error("no interface has the IP {0}", ip)
-}
-
 // prepareTunnelInterface finds the tunnel interface and sets its rp_filter
 // to "loose". On distributions with strict rp_filter (Fedora, RHEL) replies
 // arriving through the tunnel would be dropped, because the best route back

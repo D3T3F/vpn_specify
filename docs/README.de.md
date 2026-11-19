@@ -330,6 +330,20 @@ Unterschiede zu Windows:
 - **Apps, die Proxys ignorieren**: ohne `-capture` `-L` für feste Adressen
   verwenden.
 
+## macOS
+
+Die macOS-Unterstützung ist experimentell und wurde noch nicht auf einem echten Mac getestet; melde Probleme als GitHub-Issues. Unter macOS funktionieren die grafische Oberfläche und die Terminalbefehle (`up`, `run`, `status`, `update` und `-L`) mit WireGuard und OpenVPN. Nimm den `arm64`-Build für Apple Silicon und den `amd64`-Build für Intel-Macs. Die Erfassung einzelner Prozesse (`-capture`) gibt es nur unter Windows.
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+Beim Start eines OpenVPN-Tunnels fragt macOS nach dem Administratorpasswort; WireGuard fragt nach nichts. Die Oberfläche ist dieselbe Seite wie unter Windows und Linux, bereitgestellt auf `127.0.0.1` mit einem zufälligen Token. Apps fügst du mit **App hinzufügen…** und dann **Datei auswählen…** hinzu (auch `.app`-Pakete). Verfügbar ist nur der Proxy-Modus: Browser, Chromium/Electron-Apps und Programme, die `HTTP_PROXY` beachten, gehen durch das VPN. Verknüpfungen gibt es unter macOS nicht.
+
 ## Android
 
 Installieren Sie `vpn_specify-<Version>-android-arm64.apk` (Android 8 oder neuer;

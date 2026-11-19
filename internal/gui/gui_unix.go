@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package gui
 
@@ -45,7 +45,7 @@ func AutostartMain() error {
 	return runAgent(false, "", true)
 }
 
-// AgentMain: "vpn_specify agent [-launch <id>]" (on Linux the same as Main).
+// AgentMain: "vpn_specify agent [-launch <id>]" (on Unix the same as Main).
 func AgentMain(args []string) error {
 	id := ""
 	if len(args) == 2 && args[0] == "-launch" {

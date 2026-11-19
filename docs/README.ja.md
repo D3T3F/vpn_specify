@@ -323,6 +323,20 @@ Windows との違い:
 - **プロキシを無視するアプリ**: `-capture` がないので、固定アドレスには `-L`
   を使ってください。
 
+## macOS
+
+macOS 対応は実験的なもので、実機の Mac でのテストはまだ行っていません。問題は GitHub の Issue で報告してください。 macOS では、グラフィカルインターフェイスとターミナルコマンド（`up`、`run`、`status`、`update`、`-L`）が WireGuard と OpenVPN で動作します。Apple Silicon では `arm64` 版、Intel Mac では `amd64` 版を使ってください。プロセス単位のキャプチャ（`-capture`）は Windows のみです。
+
+```sh
+tar -xzf vpn_specify-<version>-macos-arm64.tar.gz   # or -macos-amd64
+brew install openvpn                                 # only for OpenVPN configs; WireGuard needs nothing
+xattr -dr com.apple.quarantine vpn_specify           # the binary is not notarized by Apple
+./vpn_specify                                        # opens the graphical interface in the browser
+./vpn_specify up work.ovpn                           # the terminal commands work the same way
+```
+
+OpenVPN のトンネルを開始すると、macOS が管理者パスワードを尋ねます。WireGuard では何も聞かれません。画面は Windows や Linux と同じページで、`127.0.0.1` にランダムなトークン付きで配信されます。アプリは **アプリを追加…** から **ファイルを選択…** で追加します（`.app` バンドルも選べます）。使えるのはプロキシモードのみで、ブラウザ、Chromium/Electron アプリ、`HTTP_PROXY` を見るプログラムが VPN を通ります。macOS ではショートカットは使えません。
+
 ## Android
 
 `vpn_specify-<バージョン>-android-arm64.apk` をインストールします(Android 8 以降。求められたらこの提供元からのインストールを許可してください)。Android にはアプリごとの VPN が組み込まれているため、プロキシは使いません。選択したアプリの TCP と UDP の全トラフィック(音声を含む)がトンネルを通り、root は不要です。スマートフォンの他の部分は通常のネットワークのままです。
