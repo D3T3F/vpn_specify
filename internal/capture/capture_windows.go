@@ -81,6 +81,13 @@ type captureEngine struct {
 	owners   map[string]ownerEntry
 	stop     chan struct{}
 	stopOnce sync.Once
+
+	gen uint64 // bumped by AddNames; verdicts computed before a change are not stored
+
+	procMu   sync.Mutex
+	procs    platform.ProcessTable // cached process snapshot, see cachedTable
+	procAt   time.Time
+	procBusy bool // a snapshot is being taken; others use the cached one
 }
 
 func normalizeExeNames(list []string) map[string]bool {
@@ -141,9 +148,9 @@ func Start(tun tunnel.Tunnel, exeNames []string, verbose bool) (Controller, erro
 // resetRunning drops the TCP connections of processes that were already
 // running, so they reconnect (now captured).
 func (e *captureEngine) resetRunning(names map[string]bool) {
-	if running := platform.RunningPIDs(names); len(running) > 0 {
+	if running := platform.RunningTreePIDs(names); len(running) > 0 {
 		n := resetTCPConnections(running)
-		log.Printf("warning: %d process(es) were already running; %d old TCP connection(s) were dropped so they reconnect through the VPN. "+
+		log.Printf("warning: %d process(es) in the tree were already running; %d old TCP connection(s) were dropped so they reconnect through the VPN. "+
 			"If something stays outside the VPN, close and reopen the app.", len(running), n)
 	}
 }
@@ -159,6 +166,7 @@ func (e *captureEngine) AddNames(list []string) {
 	}
 	if len(added) > 0 {
 		e.owners = map[string]ownerEntry{} // re-evaluate ports with the new list
+		e.gen++
 	}
 	e.mu.Unlock()
 	if len(added) > 0 {
@@ -215,7 +223,17 @@ func (e *captureEngine) deleteFirewallRule() {
 	}
 }
 
-// isTarget reports whether the local port belongs to a captured process.
+// Cache lifetimes of the port owner verdicts. An uncertain verdict (the
+// process table could not confirm it) is kept only briefly.
+const (
+	targetTTL    = 10 * time.Second
+	otherTTL     = 3 * time.Second
+	uncertainTTL = 250 * time.Millisecond
+	snapshotGap  = 250 * time.Millisecond
+)
+
+// isTarget reports whether the local port belongs to a captured process, and
+// the name to log for it.
 func (e *captureEngine) isTarget(tcp, v6 bool, port uint16) (bool, string) {
 	key := fmt.Sprint(tcp, v6, port)
 	now := time.Now()
@@ -230,18 +248,106 @@ func (e *captureEngine) isTarget(tcp, v6 bool, port uint16) (bool, string) {
 	if pid != 0 {
 		name = platform.ProcessName(pid)
 	}
+
 	e.mu.Lock()
-	o = ownerEntry{name: name, target: e.names[name]}
-	e.mu.Unlock()
-	if o.target {
-		o.expires = now.Add(10 * time.Second)
-	} else {
-		o.expires = now.Add(3 * time.Second)
+	gen := e.gen
+	names := make(map[string]bool, len(e.names))
+	for n := range e.names {
+		names[n] = true
 	}
+	e.mu.Unlock()
+
+	o, uncertain := e.verdict(pid, name, names)
+	switch {
+	case uncertain:
+		o.expires = now.Add(uncertainTTL)
+	case o.target:
+		o.expires = now.Add(targetTTL)
+	default:
+		o.expires = now.Add(otherTTL)
+	}
+
 	e.mu.Lock()
-	e.owners[key] = o
+	if e.gen == gen { // the captured list did not change while deciding
+		e.owners[key] = o
+	}
 	e.mu.Unlock()
 	return o.target, o.name
+}
+
+// verdict decides whether pid, named name (may be empty), is captured by names.
+// uncertain is true when the process table could not confirm the answer.
+func (e *captureEngine) verdict(pid uint32, name string, names map[string]bool) (o ownerEntry, uncertain bool) {
+	self := uint32(os.Getpid())
+	if pid == 0 || pid == self {
+		return ownerEntry{name: name}, false
+	}
+	if name != "" && names[name] { // captured by its own name: no ancestry needed
+		return ownerEntry{name: name, target: true}, false
+	}
+	t, ok := e.tableFor(pid, name)
+	if !ok {
+		return ownerEntry{name: name}, true
+	}
+	if name == "" {
+		name = t.Name[pid] // ProcessName failed: use the snapshot's name
+	}
+	root, captured := platform.CapturedAncestor(pid, t, names, self)
+	o = ownerEntry{name: name}
+	if captured {
+		o.target = true
+		if root != name {
+			o.name = name + " (via " + root + ")"
+		}
+	}
+	return o, false
+}
+
+// tableFor returns a snapshot in which pid is known with the given name (any
+// name when name is empty). It refreshes the cached snapshot once if the
+// cached one does not match; ok is false if it still does not.
+func (e *captureEngine) tableFor(pid uint32, name string) (t platform.ProcessTable, ok bool) {
+	t = e.cachedTable()
+	if processMatches(t, pid, name) {
+		return t, true
+	}
+	t = e.refreshTable()
+	return t, processMatches(t, pid, name)
+}
+
+func processMatches(t platform.ProcessTable, pid uint32, name string) bool {
+	snap, known := t.Name[pid]
+	return known && (name == "" || snap == name)
+}
+
+// cachedTable returns the current process snapshot without taking a new one.
+func (e *captureEngine) cachedTable() platform.ProcessTable {
+	e.procMu.Lock()
+	defer e.procMu.Unlock()
+	return e.procs
+}
+
+// refreshTable takes a new process snapshot, at most once per snapshotGap. The
+// snapshot is taken without holding procMu, and a refresh already in progress
+// is not repeated: callers get the cached snapshot instead.
+func (e *captureEngine) refreshTable() platform.ProcessTable {
+	e.procMu.Lock()
+	if e.procBusy || time.Since(e.procAt) < snapshotGap {
+		t := e.procs
+		e.procMu.Unlock()
+		return t
+	}
+	e.procBusy = true
+	e.procMu.Unlock()
+
+	t := platform.Snapshot()
+
+	e.procMu.Lock()
+	e.procs = t
+	e.procAt = time.Now()
+	e.procBusy = false
+	e.procMu.Unlock()
+	return t
 }
 
 func (e *captureEngine) worker() {

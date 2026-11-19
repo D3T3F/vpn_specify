@@ -170,6 +170,7 @@ vpn_specify-cli up work.ovpn -capture discord.exe
 - アプリがすでに開いていた場合は、VPN 経由で再接続させるために TCP 接続を
   切断します。`up` の後にアプリを開くのが確実です。
 - 繰り返し指定できます: `-capture discord.exe -capture steam.exe`。
+- キャプチャ対象アプリが起動した子プロセス（TauriやDorionアプリのWebView2ヘルパーなど）も、そのアプリの子孫である間は対象になります。
 - WireGuard と OpenVPN の両方で使えます。
 - アプリが Windows 経由で解決する名前（DNS）は、引き続き PC の通常の DNS を
   使います。DNS サーバーには*どの*ドメインかは見えますが、通信は VPN を通り

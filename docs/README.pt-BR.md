@@ -168,6 +168,7 @@ vpn_specify-cli up trabalho.ovpn -capture discord.exe
 - Se o app já estava aberto, as conexões TCP dele são derrubadas para
   reconectarem pela VPN. O mais garantido é abrir o app depois do `up`.
 - Pode repetir: `-capture discord.exe -capture steam.exe`.
+- Processos filhos iniciados por um app capturado (por exemplo, os auxiliares do WebView2 de apps Tauri ou Dorion) também são capturados, enquanto descenderem dele.
 - Funciona com WireGuard e com OpenVPN.
 - Os nomes (DNS) que o app resolve pelo Windows continuam usando o DNS normal
   do PC: o servidor DNS vê *quais* domínios, mas o tráfego vai pela VPN.

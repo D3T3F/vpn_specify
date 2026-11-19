@@ -174,6 +174,7 @@ vpn_specify-cli up arbeit.ovpn -capture discord.exe
   sich über das VPN neu verbinden. Am sichersten ist es, die App nach `up` zu
   öffnen.
 - Wiederholbar: `-capture discord.exe -capture steam.exe`.
+- Kindprozesse, die eine erfasste App startet (z. B. WebView2-Hilfsprozesse von Tauri- oder Dorion-Apps), werden ebenfalls erfasst, solange sie von ihr abstammen.
 - Funktioniert mit WireGuard und OpenVPN.
 - Namen (DNS), die die App über Windows auflöst, nutzen weiterhin das normale
   DNS des PCs: Der DNS-Server sieht *welche* Domains, der Verkehr läuft aber

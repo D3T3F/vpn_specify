@@ -152,6 +152,7 @@ vpn_specify-cli up work.ovpn -capture discord.exe
 - 如果应用已经打开，它的 TCP 连接会被断开，以便通过 VPN 重新连接。最稳妥
   的做法是在 `up` 之后再打开应用。
 - 可重复使用：`-capture discord.exe -capture steam.exe`。
+- 被捕获应用启动的子进程（例如 Tauri 或 Dorion 应用的 WebView2 辅助进程）也会被捕获，只要它们是该应用的后代。
 - 支持 WireGuard 和 OpenVPN。
 - 应用通过 Windows 解析的名称（DNS）仍使用电脑的普通 DNS：DNS 服务器能看到
   *哪些*域名，但流量走 VPN。
